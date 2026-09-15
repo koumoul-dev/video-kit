@@ -1,0 +1,44 @@
+{
+  "name": "@koumoul/video-kit",
+  "version": "0.1.0",
+  "description": "Production des vidéos de démonstration Koumoul / Data Fair : cartons à la charte, curseur factice, scénarios Playwright, synthèse vocale, montage MP4/SRT",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "bin": {
+    "koumoul-video": "./bin/koumoul-video.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "bin",
+    "dist",
+    "assets",
+    "skills",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "npm run build",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"tests/**/*.test.ts\"",
+    "quality": "npm run lint && npm run typecheck && npm run test"
+  },
+  "peerDependencies": {
+    "@playwright/test": ">=1.50.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@types/node": "^22.0.0",
+    "eslint": "^9.0.0",
+    "neostandard": "^0.13.0",
+    "typescript": "^5.8.0"
+  }
+}
