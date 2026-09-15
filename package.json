@@ -3,6 +3,27 @@
   "version": "0.2.0",
   "description": "Production des vidéos de démonstration Koumoul / Data Fair : cartons à la charte, curseur factice, scénarios Playwright, synthèse vocale, montage MP4/SRT",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/koumoul-dev/video-kit.git"
+  },
+  "homepage": "https://github.com/koumoul-dev/video-kit#readme",
+  "bugs": {
+    "url": "https://github.com/koumoul-dev/video-kit/issues"
+  },
+  "keywords": [
+    "video",
+    "demonstration",
+    "screencast",
+    "playwright",
+    "sous-titres",
+    "tts",
+    "koumoul",
+    "data-fair"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "engines": {
     "node": ">=22.18"
