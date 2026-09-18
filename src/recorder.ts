@@ -39,6 +39,11 @@ export interface ScenarioContext {
   page: Page
   beat: BeatRunner
   idle: IdleMarker
+  // marque le début du contenu utile du beat (page rendue, fin du chargement) :
+  // le montage en habillage panneaux coupe [t0, contentT0]. À appeler après
+  // l'attente de rendu du fragment, quand le chargement laisse l'ancienne page
+  // affichée (pas d'écran blanc à détecter).
+  mark: () => Promise<void>
   log: (message: string) => void
   video: string
   videosDir: string
@@ -127,8 +132,12 @@ export async function record (opts: RecordOptions) {
   const audioDir = resolve(outDir, 'audio')
   const narration = script ? (opts.noTts ? loadNarratedBeats(script, audioDir) : prepareNarration(script)) : []
   const beatIndex = new Map(narration.map((b, i) => [b.id, i]))
+  // habillage panneaux : les citations deviennent des panneaux insérés au
+  // montage, les beats sans citation des fragments ; les scènes intermédiaires
+  // ne sont plus calées sur la durée estimée de la narration.
+  const isPanelMode = script?.frontMatter.habillage === 'panneaux'
   console.log(script
-    ? `Vidéo « ${videoName} » (${width}x${height}${opts.headed ? ', headed' : ''}) — ${script.beats.length} beats`
+    ? `Vidéo « ${videoName} » (${width}x${height}${opts.headed ? ', headed' : ''}) — ${script.beats.length} beats${isPanelMode ? ', habillage panneaux' : ''}`
     : `Vidéo « ${videoName} » (${width}x${height}${opts.headed ? ', headed' : ''}) — format court sans script.md`)
 
   // Authentification :
@@ -228,6 +237,10 @@ export async function record (opts: RecordOptions) {
   }
 
   const completed: string[] = []
+  let markWall: number | undefined
+  const mark = async () => {
+    markWall = (Date.now() - originWall) / 1000
+  }
 
   const beat: BeatRunner = async (id, actions) => {
     if (!script) throw new Error(`Aucun script.md dans ${videoDir} : ce scénario doit piloter ses propres scènes.`)
@@ -244,20 +257,32 @@ export async function record (opts: RecordOptions) {
     } else if (index === 1) {
       await hideIntro(page)
     }
+    markWall = undefined
     const t0 = (Date.now() - originWall) / 1000
     await actions(page)
-    const minEnd = t0 + current.duration + GAP_AFTER_NARRATION
+    // en habillage panneaux, le texte du beat vit sur le panneau : seul le
+    // carton d'ouverture (index 0) et le carton de fin gardent sa durée
+    const padToNarration = !isPanelMode || index === 0 || index === narration.length - 1
+    const minEnd = t0 + (padToNarration ? current.duration : 0) + GAP_AFTER_NARRATION
     const wait = minEnd - (Date.now() - originWall) / 1000
     if (wait > 0) await sleep(wait * 1000)
     const t1 = (Date.now() - originWall) / 1000
-    timelineBeats.push({ id, t0: Math.round(t0 * 1000) / 1000, t1: Math.round(t1 * 1000) / 1000, audioStart: Math.round(t0 * 1000) / 1000, audioDur: current.duration })
+    timelineBeats.push({
+      id,
+      t0: Math.round(t0 * 1000) / 1000,
+      t1: Math.round(t1 * 1000) / 1000,
+      audioStart: Math.round(t0 * 1000) / 1000,
+      audioDur: current.duration,
+      contentT0: markWall !== undefined ? Math.round(markWall * 1000) / 1000 : undefined
+    })
     completed.push(id)
-    log(`${id} — ${(t1 - t0).toFixed(1)}s (narration ${current.duration.toFixed(1)}s)`)
+    const marked = markWall !== undefined ? `, contenu à +${(markWall - t0).toFixed(1)}s` : ''
+    log(`${id} — ${(t1 - t0).toFixed(1)}s (narration ${current.duration.toFixed(1)}s${marked})`)
   }
 
   try {
     if (opts.url) await page.goto(opts.url, { waitUntil: 'domcontentloaded', timeout: 60_000 })
-    await scenario.default({ page, beat, idle, log, video: videoName, videosDir })
+    await scenario.default({ page, beat, idle, mark, log, video: videoName, videosDir })
     await sleep(800)
   } catch (err) {
     console.error(err)

@@ -18,6 +18,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
+import { panelDuration, renderPanelPng, type PanelSpec } from './panels.ts'
 import { parsePronunciations, parseScript, speakText, wordCore, type PronunciationRule } from './script.ts'
 import { ffprobeDuration, type WordTiming } from './tts.ts'
 import { IDLE_FACTOR, type Timeline } from './timeline.ts'
@@ -70,25 +71,86 @@ function videoSize (video: string): { width: number, height: number } {
   return { width: Number.isFinite(width) ? width : 1280, height: Number.isFinite(height) ? height : 720 }
 }
 
-// Coupe le préambule de chargement (fond uni avant le premier rendu) par
-// variation de luminance dans une zone centrale, hors barres d'outils. Utilisé
-// quand aucun carton ne sert de repère (format court piloté par le scénario).
-function detectStart (video: string, width: number, height: number): number {
+// Détecte le premier rendu (première frame avec du contraste dans une zone
+// centrale, hors barres d'outils) à partir de `from` : utilisé pour le préambule
+// du format court, et pour couper le chargement au début de chaque fragment en
+// habillage panneaux. `-ss` en entrée recale les pts sur 0 : on rajoute `from`.
+// Exporté pour les tests.
+export function detectContentStart (video: string, width: number, height: number, from = 0, duration = 4): number | undefined {
   const cropWidth = Math.round(width * 0.6 / 2) * 2
   const cropHeight = Math.round(height * 0.5 / 2) * 2
   const crop = `${cropWidth}:${cropHeight}:${Math.round((width - cropWidth) / 4) * 2}:${Math.round((height - cropHeight) / 4) * 2}`
   const result = spawnSync('ffmpeg', [
     '-hide_banner',
+    ...(from > 0 ? ['-ss', from.toFixed(3)] : []),
     '-i', video,
-    '-t', '4',
+    '-t', duration.toFixed(3),
     '-vf', `crop=${crop},signalstats,metadata=print:file=-`,
     '-f', 'null', '-'
   ], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
   const frames = result.stdout?.matchAll(/pts_time:([\d.]+)[\s\S]*?YMIN=(\d+)[\s\S]*?YMAX=(\d+)/g) ?? []
   for (const frame of frames) {
-    if (Number(frame[3]) - Number(frame[2]) > 40) return Math.max(0, Number(frame[1]) - 0.1)
+    if (Number(frame[3]) - Number(frame[2]) > 40) return Math.max(0, from + Number(frame[1]) - 0.1)
   }
-  return 0
+  return undefined
+}
+
+// Coupe le préambule de chargement d'un format court sans carton repère.
+function detectStart (video: string, width: number, height: number): number {
+  return detectContentStart(video, width, height, 0, 4) ?? 0
+}
+
+// Fin du chargement d'un fragment (habillage panneaux) : la page précédente
+// reste affichée le temps de la navigation, puis un écran blanc couvre le
+// chargement jusqu'au premier rendu. On cherche le premier passage blanc →
+// contenu des premières secondes du beat (run blanc d'au moins 0,3 s démarré
+// dans les 8 s) et on rend l'heure du premier rendu. Sans run blanc (fragment
+// sans navigation, page qui se peint directement), aucun trim n'est décidé.
+export function detectLoadingEnd (video: string, width: number, height: number, from: number, window: number): number | undefined {
+  const cropWidth = Math.round(width * 0.6 / 2) * 2
+  const cropHeight = Math.round(height * 0.5 / 2) * 2
+  const crop = `${cropWidth}:${cropHeight}:${Math.round((width - cropWidth) / 4) * 2}:${Math.round((height - cropHeight) / 4) * 2}`
+  const result = spawnSync('ffmpeg', [
+    '-hide_banner', '-loglevel', 'error',
+    '-ss', from.toFixed(3), '-i', video,
+    '-t', window.toFixed(3),
+    '-vf', `crop=${crop},signalstats,metadata=print:file=-`,
+    '-f', 'null', '-'
+  ], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+  const frames: Array<{ time: number, blank: boolean }> = []
+  for (const match of result.stdout?.matchAll(/pts_time:([\d.]+)[\s\S]*?YMIN=(\d+)[\s\S]*?YMAX=(\d+)/g) ?? []) {
+    frames.push({ time: Number(match[1]), blank: Number(match[3]) - Number(match[2]) <= 40 })
+  }
+  const detected = findLoadingEnd(frames)
+  return detected !== undefined ? from + detected : undefined
+}
+
+// Premier rendu après un écran blanc de chargement : run blanc d'au moins 0,3 s
+// démarré dans les 8 premières secondes. Exporté pour les tests.
+export function findLoadingEnd (frames: Array<{ time: number, blank: boolean }>): number | undefined {
+  const MIN_BLANK = 0.3
+  const MAX_LOAD_OFFSET = 8
+  let runStart: number | undefined
+  for (const frame of frames) {
+    if (frame.blank) {
+      runStart ??= frame.time
+      continue
+    }
+    if (runStart !== undefined) {
+      if (frame.time - runStart >= MIN_BLANK && runStart <= MAX_LOAD_OFFSET) return frame.time
+      runStart = undefined
+    }
+  }
+  return undefined
+}
+
+// Cadence de la vidéo source : les segments de panneaux sont encodés à la même
+// cadence pour que le concat demuxer les recolle sans rééchantillonnage.
+function videoFps (video: string): number {
+  const res = spawnSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=r_frame_rate', '-of', 'csv=p=0', video], { encoding: 'utf8' })
+  const [num, den] = res.stdout.trim().split('/').map(Number)
+  const fps = den ? num / den : num
+  return Number.isFinite(fps) && fps > 0 ? Math.round(fps * 1000) / 1000 : 25
 }
 
 function srtTime (seconds: number): string {
@@ -360,6 +422,41 @@ export function buildTimeMapper (segments: TimeSegment[]) {
   }
 }
 
+// Habillage panneaux : chaque beat (déjà trimé des chargements) est un fragment,
+// précédé de son panneau s'il en déclare un. Les trous entre les beats (temps de
+// chargement coupés au début du fragment suivant) ne sont pas repris. Les
+// attentes `idle` (réponses du LLM) restent compressées à l'intérieur des
+// fragments. Exporté pour les tests.
+export interface PanelPartBeat {
+  start: number
+  end: number
+  panel?: { spec: PanelSpec, duration: number }
+}
+
+export type MuxPart =
+  | { kind: 'video', start: number, end: number, factor: number }
+  | { kind: 'panel', panel: { spec: PanelSpec, duration: number } }
+
+export function buildPanelParts (beats: PanelPartBeat[], idles: TimeSegment[]): MuxPart[] {
+  const parts: MuxPart[] = []
+  for (const beat of beats) {
+    if (beat.panel) parts.push({ kind: 'panel', panel: beat.panel })
+    const overlapping = idles
+      .filter(idle => idle.end > beat.start && idle.start < beat.end)
+      .sort((x, y) => x.start - y.start)
+    let cursor = beat.start
+    for (const idle of overlapping) {
+      const start = Math.max(idle.start, beat.start)
+      const end = Math.min(idle.end, beat.end)
+      if (start - cursor > 0.05) parts.push({ kind: 'video', start: cursor, end: start, factor: 1 })
+      if (end - start > 0.05) parts.push({ kind: 'video', start, end, factor: idle.factor })
+      cursor = end
+    }
+    if (beat.end - cursor > 0.05) parts.push({ kind: 'video', start: cursor, end: beat.end, factor: 1 })
+  }
+  return parts
+}
+
 export async function mux (videoName: string, videosDir: string, opts: MuxOptions = {}) {
   const videoDir = resolve(videosDir, videoName)
   const outDir = resolve(videoDir, 'out')
@@ -381,38 +478,47 @@ export async function mux (videoName: string, videosDir: string, opts: MuxOption
   const videoDur = ffprobeDuration(webm)
   const beats = timeline.beats.filter(beat => textById.has(beat.id))
   const isMute = !beats.some(beat => existsSync(resolve(outDir, 'audio', `${beat.id}.mp3`)))
+  const size = timeline.width && timeline.height
+    ? { width: timeline.width, height: timeline.height }
+    : videoSize(webm)
 
   let a: number
+  // temps mur → temps de sortie pré-compression (source décalée de l'amorce)
   let b: number
+  // temps mur → temps source (WebM brut), pour les découpes ffmpeg
+  let bSource: number
   let startAt = 0
   if (opts.offset !== undefined) {
     a = 1
     b = opts.offset
+    bSource = opts.offset
   } else if (beats.length) {
     // carton de titre : repère de calage (blanc → bleu) et coupe du préambule
     const detected = detectCardTime(webm)
     if (detected !== undefined) {
       a = timeline.endWall > 5 ? videoDur / timeline.endWall : 1
-      b = detected - a * timeline.cardT0
+      bSource = detected - a * timeline.cardT0
+      b = bSource
       console.log(`Carton détecté à ${detected.toFixed(2)}s (attendu ${timeline.cardT0.toFixed(2)}s) — échelle ${a.toFixed(4)}, offset ${b.toFixed(2)}s`)
       startAt = detected
     } else {
       a = 1
       b = -timeline.cardT0
+      bSource = b
       console.warn('Carton non détecté : calage sur le début de la vidéo (vérifiez la synchro).')
     }
   } else {
     // format court sans carton : détection du premier rendu par luminance
-    const size = timeline.width && timeline.height
-      ? { width: timeline.width, height: timeline.height }
-      : videoSize(webm)
     startAt = detectStart(webm, size.width, size.height)
     a = 1
     b = -startAt
+    bSource = 0
     if (startAt > 0) console.log(`Préambule de chargement coupé : ${startAt.toFixed(2)}s (démarrage sur le premier rendu)`)
     else console.warn('Début de vidéo non détecté : conservation du préambule (vérifiez le montage).')
   }
-  if (startAt > 0 && beats.length && b !== opts.offset) {
+  if (startAt > 0 && beats.length) {
+    // les temps de sortie repartent de zéro (démarrage sur le carton), les
+    // découpes des morceaux restent exprimées en temps source
     b -= startAt
     console.log(`Amorce coupée : ${startAt.toFixed(2)}s (démarrage sur le carton de titre)`)
   }
@@ -420,22 +526,97 @@ export async function mux (videoName: string, videosDir: string, opts: MuxOption
   // En mode muet, aucune piste audio n'est produite : les beats servent aux
   // sous-titres et à la durée de sortie, sans mélange audio.
   const audioBeats = beats.filter(beat => existsSync(resolve(outDir, 'audio', `${beat.id}.mp3`)))
-  const idleSegments = audioBeats.length ? [] : mergeIdleSegments(timeline.idles ?? [], a, b, videoDur)
+  // attentes compressées : en temps de sortie pour le timeMapper (sous-titres),
+  // en temps source pour les découpes ffmpeg
+  const idleSegments = audioBeats.length ? [] : mergeIdleSegments(timeline.idles ?? [], a, b, Math.max(0, videoDur - startAt))
+  const idleSegmentsSource = audioBeats.length ? [] : mergeIdleSegments(timeline.idles ?? [], a, bSource, videoDur)
   const timeMapper = idleSegments.length ? buildTimeMapper(idleSegments) : (videoTime: number) => videoTime
+
+  // Habillage panneaux : la citation d'un beat devient un panneau inséré avant
+  // son fragment ; les beats sans citation sont des fragments du panneau
+  // précédent. Le chargement au début de chaque fragment est coupé par
+  // luminance (le panneau remplace l'écran blanc). Réservé au muet : une piste
+  // audio devrait être décalée du temps des panneaux.
+  const frontMatter = script?.frontMatter ?? {}
+  const isPanelMode = frontMatter.habillage === 'panneaux'
+  if (isPanelMode && audioBeats.length) {
+    throw new Error('Habillage panneaux : incompatible avec une narration audio (utiliser fournisseur: muet).')
+  }
+  const fps = isPanelMode ? videoFps(webm) : 25
+  const beatTitles = new Map((script?.beats ?? []).map(beat => [beat.id, beat.title]))
+  const panelBeats = isPanelMode
+    ? beats.slice(1, -1).filter(beat => (textById.get(beat.id) ?? '').trim())
+    : []
+  const panels = panelBeats.map((beat, index) => {
+    const text = (textById.get(beat.id) ?? '').trim()
+    return {
+      beatId: beat.id,
+      duration: panelDuration(text),
+      spec: {
+        title: beatTitles.get(beat.id) ?? beat.id,
+        text,
+        badge: `${String(index + 1).padStart(2, '0')} / ${String(panelBeats.length).padStart(2, '0')}`,
+        site: frontMatter.carton_site
+      } satisfies PanelSpec
+    }
+  })
+  const trims = new Map<string, number>()
+  if (isPanelMode) {
+    let cut = 0
+    for (const beat of beats.slice(1)) {
+      // découpes exprimées en temps source (WebM brut)
+      const from = a * beat.t0 + bSource
+      const to = a * beat.t1 + bSource
+      // marque explicite du scénario (`mark()`) : coupe précise du chargement
+      // quand l'ancienne page reste affichée sans écran blanc à détecter
+      if (beat.contentT0 !== undefined) {
+        const marked = Math.max(a * beat.contentT0 + bSource, from)
+        if (marked - from > 0.15 && marked < to) {
+          trims.set(beat.id, marked)
+          cut += 1
+          console.log(`  chargement coupé sur ${beat.id} : ${(marked - from).toFixed(2)}s (marque du scénario)`)
+        }
+        continue
+      }
+      const window = Math.min(20, to - from)
+      if (window <= 1) continue
+      const detected = detectLoadingEnd(webm, size.width, size.height, from, window)
+      if (detected !== undefined && detected - from > 0.15 && detected < to) {
+        trims.set(beat.id, detected)
+        cut += 1
+        console.log(`  chargement coupé sur ${beat.id} : ${(detected - from).toFixed(2)}s`)
+      }
+    }
+    const panelDur = panels.reduce((acc, panel) => acc + panel.duration, 0)
+    console.log(`Panneaux : ${panels.length} panneaux (${panelDur.toFixed(1)}s), chargements coupés sur ${cut} fragment(s)`)
+  }
+
   // Découpage temps réel → temps vidéo (attentes compressées, facteur par
   // attente) : chaque morceau est encodé séparément puis assemblé par le concat
   // demuxer. Un graphe trim/concat en une seule passe bufferise toutes les
   // images du WebM en mémoire (SIGKILL au-delà de quelques minutes de 1080p).
-  let partList: Array<{ start: number, end: number, factor: number }> | undefined
-  if (idleSegments.length) {
+  // En habillage panneaux, les morceaux sont les fragments (précédés de leur
+  // panneau) : les temps de chargement entre fragments ne sont pas repris.
+  let partList: MuxPart[] | undefined
+  if (isPanelMode) {
+    partList = buildPanelParts(beats.map((beat) => {
+      const panel = panels.find(candidate => candidate.beatId === beat.id)
+      return {
+        start: trims.get(beat.id) ?? a * beat.t0 + bSource,
+        end: a * beat.t1 + bSource,
+        panel: panel ? { spec: panel.spec, duration: panel.duration } : undefined
+      }
+    }), idleSegmentsSource)
+    console.log(`Montage panneaux : ${partList.length} segments`)
+  } else if (idleSegmentsSource.length) {
     partList = []
     let cursor = startAt
-    for (const segment of idleSegments) {
-      if (segment.start - cursor > 0.05) partList.push({ start: cursor, end: segment.start, factor: 1 })
-      partList.push({ start: segment.start, end: segment.end, factor: segment.factor })
+    for (const segment of idleSegmentsSource) {
+      if (segment.start - cursor > 0.05) partList.push({ kind: 'video', start: cursor, end: segment.start, factor: 1 })
+      partList.push({ kind: 'video', start: segment.start, end: segment.end, factor: segment.factor })
       cursor = segment.end
     }
-    if (videoDur - cursor > 0.05) partList.push({ start: cursor, end: videoDur, factor: 1 })
+    if (videoDur - cursor > 0.05) partList.push({ kind: 'video', start: cursor, end: videoDur, factor: 1 })
     console.log(`Attentes compressées : ${idleSegments.map(segment => `${(segment.end - segment.start).toFixed(1)}s/×${segment.factor}`).join(', ')}`)
   }
   const inputs: string[] = []
@@ -452,34 +633,52 @@ export async function mux (videoName: string, videosDir: string, opts: MuxOption
   const srtLines: string[] = []
   let cueIndex = 0
   let lastCueEnd = 0
-  for (const beat of beats) {
-    const cues = isMute
-      ? buildSilentCues(textById.get(beat.id) ?? '', timeMapper(a * beat.t0 + b), timeMapper(a * beat.t1 + b), beat.id, lastCueEnd)
-      : buildCues(
-        textById.get(beat.id) ?? '',
-        wordsById.get(beat.id),
-        rules,
-        wall => timeMapper(a * wall + b),
-        beat.audioStart,
-        beat.audioDur
-      )
-    for (const cue of cues) {
-      lastCueEnd = Math.max(lastCueEnd, cue.end)
-      const lines = wrapCue(cue.text)
-      if (lines.length > 2) throw new Error(`Cue de ${lines.length} lignes (${beat.id}) : ${cue.text}`)
-      cueIndex++
-      srtLines.push(`${cueIndex}\n${srtTime(cue.start)} --> ${srtTime(cue.end)}\n${lines.join('\n')}\n`)
+  if (!isPanelMode) {
+    for (const beat of beats) {
+      const cues = isMute
+        ? buildSilentCues(textById.get(beat.id) ?? '', timeMapper(a * beat.t0 + b), timeMapper(a * beat.t1 + b), beat.id, lastCueEnd)
+        : buildCues(
+          textById.get(beat.id) ?? '',
+          wordsById.get(beat.id),
+          rules,
+          wall => timeMapper(a * wall + b),
+          beat.audioStart,
+          beat.audioDur
+        )
+      for (const cue of cues) {
+        lastCueEnd = Math.max(lastCueEnd, cue.end)
+        const lines = wrapCue(cue.text)
+        if (lines.length > 2) throw new Error(`Cue de ${lines.length} lignes (${beat.id}) : ${cue.text}`)
+        cueIndex++
+        srtLines.push(`${cueIndex}\n${srtTime(cue.start)} --> ${srtTime(cue.end)}\n${lines.join('\n')}\n`)
+      }
     }
   }
 
-  // coupe la fin silencieuse après le dernier beat (dernière scène ou dernière cue)
+  // coupe la fin silencieuse après le dernier beat (dernière scène ou dernière
+  // cue) ; en habillage panneaux, la durée est la somme des segments montés
   const lastBeatEnd = beats.length ? Math.max(...beats.map(beat => a * beat.t1 + b)) : 0
-  const outputDur = beats.length
-    ? Math.min(timeMapper(videoDur), Math.max(lastCueEnd, timeMapper(lastBeatEnd)) + 1.5)
-    : Math.max(0, timeMapper(videoDur) - startAt)
+  let outputDur: number
+  if (isPanelMode && partList) {
+    outputDur = partList.reduce((acc, part) => acc + (part.kind === 'panel' ? part.panel.duration : (part.end - part.start) / part.factor), 0) + 1
+  } else if (beats.length) {
+    outputDur = Math.min(timeMapper(Math.max(0, videoDur - startAt)), Math.max(lastCueEnd, timeMapper(lastBeatEnd)) + 1.5)
+  } else {
+    outputDur = Math.max(0, timeMapper(videoDur) - startAt)
+  }
   const srt = resolve(outDir, `${videoName}.srt`)
   if (cueIndex) writeFileSync(srt, srtLines.join('\n'))
-  else console.log('Aucun sous-titre à produire (format court : sous-titres incrustés dans la vidéo).')
+  else if (isPanelMode) {
+    // un tournage précédent a pu laisser un SRT et une variante sous-titrée :
+    // les retirer pour ne pas diffuser par erreur la version d'avant
+    for (const stale of [srt, resolve(outDir, `${videoName}.st.mp4`)]) {
+      if (existsSync(stale)) {
+        rmSync(stale, { force: true })
+        console.log(`Artefact sous-titré supprimé : ${stale}`)
+      }
+    }
+    console.log('Habillage panneaux : pas de sous-titres (le texte est porté par les panneaux).')
+  } else console.log('Aucun sous-titre à produire (format court : sous-titres incrustés dans la vidéo).')
 
   const mp4 = resolve(outDir, `${videoName}.mp4`)
   let concatList: string | undefined
@@ -489,20 +688,44 @@ export async function mux (videoName: string, videosDir: string, opts: MuxOption
     const segDir = resolve(outDir, 'segs')
     rmSync(segDir, { recursive: true, force: true })
     mkdirSync(segDir, { recursive: true })
+    const panelDir = resolve(outDir, 'panels')
+    if (isPanelMode) {
+      rmSync(panelDir, { recursive: true, force: true })
+      mkdirSync(panelDir, { recursive: true })
+    }
     const listLines: string[] = []
+    let panelIndex = 0
     for (const [index, part] of partList.entries()) {
       const segPath = resolve(segDir, `seg-${String(index).padStart(3, '0')}.mp4`)
-      const segArgs = [
-        '-y', '-loglevel', 'error',
-        '-ss', part.start.toFixed(3), '-to', part.end.toFixed(3), '-i', webm,
-        '-vf', part.factor === 1 ? 'setpts=PTS-STARTPTS' : `setpts=(PTS-STARTPTS)/${part.factor}`,
-        '-an', '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p',
-        segPath
-      ]
+      let segArgs: string[]
+      let label: string
+      if (part.kind === 'panel') {
+        // panneau : PNG rendu à la charte, tenu pendant le temps de lecture
+        const png = resolve(panelDir, `panel-${String(panelIndex++).padStart(2, '0')}.png`)
+        await renderPanelPng(part.panel.spec, size, png)
+        segArgs = [
+          '-y', '-loglevel', 'error',
+          '-loop', '1', '-framerate', String(fps), '-i', png,
+          '-t', part.panel.duration.toFixed(3),
+          '-an', '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p',
+          '-r', String(fps),
+          segPath
+        ]
+        label = `panneau ${panelIndex}/${panels.length} « ${part.panel.spec.title} » (${part.panel.duration.toFixed(1)}s)`
+      } else {
+        segArgs = [
+          '-y', '-loglevel', 'error',
+          '-ss', part.start.toFixed(3), '-to', part.end.toFixed(3), '-i', webm,
+          '-vf', part.factor === 1 ? 'setpts=PTS-STARTPTS' : `setpts=(PTS-STARTPTS)/${part.factor}`,
+          '-an', '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p',
+          segPath
+        ]
+        label = `morceau ${index + 1}/${partList.length} (${(part.end - part.start).toFixed(1)}s${part.factor === 1 ? '' : ` / ×${part.factor}`})`
+      }
       const segRes = spawnSync('ffmpeg', segArgs, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
-      if (segRes.status !== 0) throw new Error(`ffmpeg (morceau ${index + 1}/${partList.length}) : ${segRes.stderr?.slice(-2000)}`)
+      if (segRes.status !== 0) throw new Error(`ffmpeg (${label}) : ${segRes.stderr?.slice(-2000)}`)
       listLines.push(`file '${segPath}'`)
-      console.log(`morceau ${index + 1}/${partList.length} (${(part.end - part.start).toFixed(1)}s → ${(part.end - part.start).toFixed(1)}s / ${part.factor})`)
+      console.log(label)
     }
     concatList = resolve(outDir, `${videoName}.concat.txt`)
     writeFileSync(concatList, listLines.join('\n') + '\n')
@@ -530,13 +753,15 @@ export async function mux (videoName: string, videosDir: string, opts: MuxOption
   }
   args.push('-movflags', '+faststart', '-t', outputDur.toFixed(3), mp4)
   const audioLabel = audioBeats.length ? `${audioBeats.length} narrations` : 'muet'
-  const cueLabel = cueIndex ? `${cueIndex} sous-titres` : 'sans sous-titres'
+  const cueLabel = isPanelMode ? `${panels.length} panneaux` : cueIndex ? `${cueIndex} sous-titres` : 'sans sous-titres'
   console.log(`Assemblage MP4 (${audioLabel}, ${cueLabel}, ${outputDur.toFixed(1)}s sur ${videoDur.toFixed(1)}s)…`)
   const res = spawnSync('ffmpeg', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
   if (res.status !== 0) throw new Error(`ffmpeg : ${res.stderr?.slice(-2000)}`)
 
   if (opts.burn) {
-    if (!cueIndex) {
+    if (isPanelMode) {
+      console.warn('Incrustation ignorée : habillage panneaux (pas de sous-titres).')
+    } else if (!cueIndex) {
       console.warn('Incrustation ignorée : aucun sous-titre (format court, déjà incrustés).')
     } else {
       const stMp4 = resolve(outDir, `${videoName}.st.mp4`)

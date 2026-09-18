@@ -34,6 +34,7 @@ Tant que le paquet n'est pas publié sur npm, l'installer depuis un tarball
 | --- | --- | --- | --- | --- |
 | `voix` | cours, tutoriels (docs.koumoul.com) | oui, `fournisseur: edge` ou `kokoro` | voix de synthèse + sous-titres SRT | carton au beat 0, fin au dernier beat |
 | `muet` | démos d'atelier présentées avec des slides | oui, `fournisseur: muet` | aucune piste audio, sous-titres ancrés sur la scène | idem |
+| `muet` + `habillage: panneaux` | boucle de stand sans sous-titres | oui, `fournisseur: muet` | citations en panneaux pleine page entre les fragments | idem |
 | `social` | formats courts (~30 s, réseaux sociaux) | non | aucune | intro dès la première frame, sous-titres incrustés par le scénario |
 
 Tailles par défaut : 1920×1080 (`voix`, `muet`), 1280×720 (`social`, format qui
@@ -94,6 +95,12 @@ l'essentiel :
   l'interface). Jamais de curseur système à l'écran.
 - **Sous-titres** : 2 lignes maximum, ~40 caractères par ligne, coupures à la
   ponctuation, incrustés (autoplay sans son), SRT conservé pour la version voix.
+  En habillage `panneaux`, les citations ne deviennent pas des sous-titres : elles
+  sont rendues en cartes pleine page (Nunito, dégradé charte) insérées au montage
+  entre les fragments, et le chargement de chaque fragment est retiré.
+- **Panneaux** : un beat avec citation ouvre un panneau, les beats suivants sans
+  citation sont ses fragments ; le scénario appelle `mark()` après l'attente de
+  rendu pour couper le chargement (repli automatique par détection d'écran blanc).
 - **Attentes** : `idle.begin()` (×6 réponses du LLM, ×10 traitements techniques) ;
   le montage compresse les segments et raccourcit la vidéo sans perdre le rythme.
 - **Toujours vérifier** après montage : `ffprobe` (durée, absence de piste audio
@@ -108,4 +115,4 @@ l'essentiel :
 - [references/pipeline.md](references/pipeline.md) — synthèse, tournage, timeline, montage, vérifications.
 - [references/auth.md](references/auth.md) — proxy NHI, cookies, variantes.
 - [references/pieges.md](references/pieges.md) — pièges rencontrés (CSP, LLM, ordre des beats…).
-- [templates/](templates/) — `script.md`, `scenario.ts`, snippets `package.json` / `.gitignore`.
+- [templates/](templates/) — `script.md`, `script-panneaux.md`, `scenario.ts`, `scenario-social.ts`, snippets `package.json` / `.gitignore`.

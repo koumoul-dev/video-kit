@@ -1,6 +1,6 @@
 {
   "name": "@koumoul/video-kit",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Production des vidéos de démonstration Koumoul / Data Fair : cartons à la charte, curseur factice, scénarios Playwright, synthèse vocale, montage MP4/SRT",
   "license": "MIT",
   "repository": {

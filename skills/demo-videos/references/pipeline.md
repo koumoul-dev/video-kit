@@ -25,7 +25,11 @@ script.md ──► tts (voix|muet) ──► recorder (Playwright) ──► ti
 2. Le scénario joue son prélude (hors timeline), puis chaque `beat(id, actions)` :
    - beat 0 : carton d'intro, `cardT0` enregistré ;
    - beat 1 : masquage du carton ;
-   - la durée de la scène est au moins celle de la narration (+ 0,7 s).
+   - la durée de la scène est au moins celle de la narration (+ 0,7 s) ; en
+     habillage `panneaux`, seuls les cartons d'ouverture et de fin gardent cette
+     durée, les fragments ne durent que leurs actions ;
+   - `mark()` (contexte scénario) note le début du contenu utile du fragment
+     (`contentT0` dans la timeline) : le montage coupe le chargement jusque-là.
 3. Les attentes marquées `idle.begin(factor)` sont notées dans la timeline
    (facteur ×6 par défaut, ×10 pour les traitements techniques).
 4. Le WebM brut est écrit dans `out/<video>.webm`, la timeline dans
@@ -42,6 +46,11 @@ le scénario), `--no-tts` (réutilise l'audio), `--profile`, `--state`, `--no-st
   luminance (`signalstats` sur une zone centrale).
 - **Sous-titres** : découpage en cues de 2 lignes (~40 caractères), calées mot à
   mot (voix) ou ancrées sur la scène (muet, ~13 caractères/s).
+- **Habillage panneaux** (`habillage: panneaux`, muet) : chaque citation devient
+  un panneau pleine page rendu par Chromium headless (durée = temps de lecture,
+  ~2,6 mots/s), inséré avant son fragment ; le chargement au début de chaque
+  fragment est coupé (marque `contentT0` du tournage, sinon détection d'un écran
+  blanc) ; ni SRT ni `.st.mp4`.
 - **Compression des attentes** : le temps mur → temps vidéo est une application
   affine par morceaux ; les segments sont encodés **morceau par morceau** puis
   assemblés par le concat demuxer (un graphe unique bufferise tout le 1080p en

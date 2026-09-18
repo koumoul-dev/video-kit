@@ -11,6 +11,7 @@ titre: L'assistant IA en back-office
 atelier: L'IA au service des données ouvertes
 cible: ~5 min
 fournisseur: muet                    # edge | kokoro | muet
+habillage: panneaux                  # optionnel : panneaux entre fragments (muet)
 environnement: https://koumoul.com/data-fair — département test
 carton_eyebrow: Atelier — L'IA au service des données ouvertes
 carton_sous_titre: Data Fair — démonstration
@@ -101,6 +102,42 @@ Le contexte expose `page`, `beat`, `idle`, `log`, `video`, `videosDir`.
 - Ne pas utiliser `page.goto` après `hideIntro` quand `intro` est exportée : la
   carte ne doit pas réapparaître. En mode à beats, naviguer pendant le carton
   (beat 0) perdrait le repère de calage.
+
+## Habillage panneaux (`habillage: panneaux`)
+
+Voir `templates/script-panneaux.md` pour un squelette complet.
+
+Boucle sans sous-titres : les citations deviennent des panneaux pleine page
+insérés au montage avant chaque section, et le chargement de chaque fragment est
+coupé.
+
+- un beat **avec citation** ouvre un panneau ; les beats **sans citation** qui
+  suivent sont des fragments du panneau ;
+- les scènes intermédiaires ne sont plus calées sur la durée estimée de la
+  narration (seuls le carton d'ouverture et le carton de fin gardent la leur) :
+  la citation est un texte de panneau court, pas une narration ;
+- après l'attente de rendu d'un fragment, appeler `mark()` : le montage coupe
+  `[t0, marque]`. Sans marque, la détection automatique coupe un écran blanc de
+  chargement, mais pas une ancienne page qui reste affichée pendant la
+  navigation (passer explicitement par `mark()` dans ce cas) ;
+- `fournisseur: muet` obligatoire (le kit refuse une piste audio) ; ni SRT ni
+  `.st.mp4` ne sont produits.
+
+```ts
+export default async ({ page, beat, mark }: ScenarioContext) => {
+  await beat('beat-03', async () => {        // ouvre le panneau « Portail open data »
+    await page.goto(`${HOME}dataset/${DATASET}/table`)
+    await page.locator('[data-action-id="check-data-quality"]').last().waitFor()
+    await mark()                             // fin du chargement : le clip démarre ici
+    await sleep(2_500)
+    await wheelHuman(page, 960, 600, 420, 3)
+  })
+
+  await beat('beat-04', async () => {        // fragment du même panneau
+    await wheelHuman(page, 960, 600, -420, 2)
+  })
+}
+```
 
 ## Format court sans `script.md`
 

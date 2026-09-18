@@ -62,18 +62,11 @@ export function loadOverlayAssets (): OverlayAssets {
   return { fontsCss, logo: `data:image/png;base64,${logo}` }
 }
 
-export async function installOverlay (context: BrowserContext, options: OverlayOptions = {}) {
-  await context.addInitScript((opts: OverlayOptions) => {
-    const { intro, assets } = opts
-    const captionRight = opts.caption?.right ?? 0
-    const setup = () => {
-      if (document.getElementById('__demo-overlay')) return true
-      const host = document.documentElement
-      if (!host) return false
-
-      // Feuille constructible : non soumise à la CSP `style-src`.
-      const sheet = new CSSStyleSheet()
-      sheet.replaceSync(`${assets?.fontsCss ?? ''}
+// Feuille de style de l'habillage (cartons et panneaux), partagée entre
+// l'overlay injecté dans les pages et le rendu des panneaux au montage
+// (`panels.ts`) : cartons et panneaux restent ainsi identiques à la charte.
+export function habillageCss (fontsCss = ''): string {
+  return `${fontsCss}
         #__demo-overlay, #__demo-overlay * { box-sizing: border-box; }
         #__demo-overlay {
           position: fixed; inset: 0; z-index: 2147483000; pointer-events: none;
@@ -130,7 +123,26 @@ export async function installOverlay (context: BrowserContext, options: OverlayO
           transition: opacity .2s ease;
         }
         #__demo-caption.demo-visible .caption-box { opacity: 1; }
-      `)
+      `
+}
+
+// Le script d'init est sérialisé et exécuté dans la page : tout ce qu'il utilise
+// doit être passé en argument (la CSS charte est calculée côté Node).
+type OverlayInitOptions = OverlayOptions & { css: string }
+
+export async function installOverlay (context: BrowserContext, options: OverlayOptions = {}) {
+  const initOptions: OverlayInitOptions = { ...options, css: habillageCss(options.assets?.fontsCss) }
+  await context.addInitScript((opts: OverlayInitOptions) => {
+    const { intro, assets, css } = opts
+    const captionRight = opts.caption?.right ?? 0
+    const setup = () => {
+      if (document.getElementById('__demo-overlay')) return true
+      const host = document.documentElement
+      if (!host) return false
+
+      // Feuille constructible : non soumise à la CSP `style-src`.
+      const sheet = new CSSStyleSheet()
+      sheet.replaceSync(css)
       document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet]
       host.style.setProperty('--demo-caption-right', `${captionRight}px`)
 
@@ -278,7 +290,7 @@ export async function installOverlay (context: BrowserContext, options: OverlayO
       })
       observer.observe(document, { childList: true })
     }
-  }, options)
+  }, initOptions)
 }
 
 export async function showIntro (page: Page, card: OverlayCard) {

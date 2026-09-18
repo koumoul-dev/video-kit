@@ -1,7 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
-import { buildSilentCues, buildTimeMapper, groupTokens, mergeIdleSegments, wrapCue } from '../src/mux.ts'
+import { buildPanelParts, buildSilentCues, buildTimeMapper, findLoadingEnd, groupTokens, mergeIdleSegments, wrapCue } from '../src/mux.ts'
+import { panelDuration, panelHtml } from '../src/panels.ts'
 import { silentDuration } from '../src/tts.ts'
 import { parsePronunciations, parseScript, speakText, tokenize } from '../src/script.ts'
 
@@ -74,6 +75,53 @@ test('cues muettes : durée de lecture naturelle et chaînage', () => {
     if (i > 0) assert.ok(cues[i].start >= cues[i - 1].end - 1e-9)
   }
   assert.ok(cues[cues.length - 1].end <= 20 + 1e-9)
+})
+
+test('panneaux : durée de lecture, minimum 3 s', () => {
+  assert.equal(panelDuration(''), 3)
+  assert.equal(panelDuration('un deux trois'), 3)
+  assert.equal(panelDuration(Array.from({ length: 26 }, () => 'mot').join(' ')), 10)
+})
+
+test('panneaux : HTML à la charte, texte échappé, logo embarqué', () => {
+  const html = panelHtml(
+    { title: 'Portail <open> data', text: 'Catalogue & API', badge: '02 / 08', site: 'datafair.cloud' },
+    { logo: 'data:image/png;base64,AAAA' }
+  )
+  assert.match(html, /Portail &lt;open&gt; data/)
+  assert.match(html, /Catalogue &amp; API/)
+  assert.match(html, /demo-badge">02 \/ 08/)
+  assert.match(html, /demo-title demo-in/)
+  assert.match(html, /demo-logo" alt="Koumoul" src="data:image\/png;base64,AAAA"/)
+  assert.ok(!html.includes('<script'))
+})
+
+test('montage panneaux : panneau avant son fragment, attentes compressées, trous ignorés', () => {
+  const panel = { spec: { title: 'Portail open data', text: 'Catalogue DCAT' }, duration: 5 }
+  const parts = buildPanelParts([
+    { start: 0, end: 4 },
+    { start: 10, end: 20, panel },
+    { start: 20, end: 26 }
+  ], [{ start: 12, end: 18, factor: 10 }])
+  assert.deepEqual(parts.map(part => part.kind), ['video', 'panel', 'video', 'video', 'video', 'video'])
+  assert.deepEqual(parts[0], { kind: 'video', start: 0, end: 4, factor: 1 })
+  assert.deepEqual(parts[1], { kind: 'panel', panel })
+  assert.deepEqual(parts[2], { kind: 'video', start: 10, end: 12, factor: 1 })
+  assert.deepEqual(parts[3], { kind: 'video', start: 12, end: 18, factor: 10 })
+  assert.deepEqual(parts[4], { kind: 'video', start: 18, end: 20, factor: 1 })
+  assert.deepEqual(parts[5], { kind: 'video', start: 20, end: 26, factor: 1 })
+})
+
+test('fin de chargement : premier rendu après un écran blanc', () => {
+  const frame = (time: number, blank: boolean) => ({ time, blank })
+  // page précédente, blanc de chargement, puis rendu : on coupe le chargement
+  assert.equal(findLoadingEnd([frame(0, false), frame(1, false), frame(2, true), frame(3, true), frame(4, false)]), 4)
+  // pas de blanc (navigation directe ou fragment sans navigation) : pas de coupe
+  assert.equal(findLoadingEnd([frame(0, false), frame(1, false)]), undefined)
+  // blanc trop court (flash) : pas de coupe
+  assert.equal(findLoadingEnd([frame(0, false), frame(2, true), frame(2.1, true), frame(2.2, false)]), undefined)
+  // blanc trop tardif (plus de 8 s après le début) : pas de coupe
+  assert.equal(findLoadingEnd([frame(0, false), frame(9, true), frame(10, true), frame(11, false)]), undefined)
 })
 
 test('lecture de script.md : front matter, beats et prononciations', () => {

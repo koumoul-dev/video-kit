@@ -51,6 +51,24 @@ export const intro = {
 }
 ```
 
+## Panneaux de chapitre (habillage `panneaux`)
+
+Variante sans sous-titres (`habillage: panneaux` dans `script.md`, réservée au
+mode muet) : le montage fabrique des panneaux pleine page (`src/panels.ts`) et
+les insère entre les fragments vidéo ; le texte de lecture vient des citations
+de `script.md`, le titre du beat devient le titre du panneau.
+
+- **Même charte que les cartons** : dégradé `#0A2F5E → #1976D2`, bandeau
+  `#81D4FA`, Nunito embarquée, logo Koumoul, site (`carton_site`) ;
+- eyebrow numéroté (`01 / 05`), titre, texte de 1 à 2 phrases (viser ~100 à
+  150 caractères, c'est un panneau, pas une page) ;
+- **durée = temps de lecture** (~2,6 mots/s, plancher 3 s) ;
+- rendu PNG par Chromium headless **sans animation** (transitions neutralisées) :
+  l'image est déterministe, le panneau est encodé en segment muet à la cadence
+  de la vidéo puis recollé au concat demuxer ;
+- le chargement de chaque fragment est coupé (marque `mark()` du scénario, repli
+  par détection d'écran blanc) : le panneau remplace l'écran d'attente.
+
 ## Curseur factice
 
 Playwright ne filme jamais le curseur système : le kit injecte une flèche

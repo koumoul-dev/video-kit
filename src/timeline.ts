@@ -14,6 +14,9 @@ export interface TimelineBeat {
   t1: number
   audioStart: number
   audioDur: number
+  // début du contenu utile du beat (fin du chargement), marqué par le scénario
+  // via `mark()` : le montage des panneaux coupe [t0, contentT0]
+  contentT0?: number
 }
 
 export interface TimelineIdle {

@@ -48,6 +48,11 @@ Options : `--videos-dir` (défaut `videos`), `--size`, `--url`, `--headed`,
 | `muet` | 1920×1080 | aucune, sous-titres ancrés sur la scène | démos d'atelier |
 | `social` | 1280×720 | aucune, sous-titres incrustés par le scénario | formats courts |
 
+Variante de `muet` : `habillage: panneaux` dans le front matter — les citations
+deviennent des **panneaux pleine page** insérés au montage entre les fragments,
+le chargement de chaque fragment est coupé (marque `mark()` du scénario), et
+aucun sous-titre n'est produit. Réservé au muet.
+
 Sans `script.md`, le kit bascule en **format court** : le scénario exporte son
 accroche (`export const intro`), pilote les sous-titres (`setCaption`) et la
 carte de fin (`showOutro`) ; le préambule de chargement est coupé par analyse de
@@ -63,12 +68,13 @@ import {
   type ScenarioContext
 } from '@koumoul/video-kit'
 
-export default async ({ page, beat, idle, log }: ScenarioContext) => {
+export default async ({ page, beat, idle, mark, log }: ScenarioContext) => {
   await beat('beat-00', async () => { /* carton affiché par le kit */ })
   await beat('beat-01', async () => {
     idle.begin()      // attente LLM compressée ×6 au montage
     // …
     idle.end()
+    await mark()      // fin du chargement (habillage panneaux)
   })
 }
 ```
