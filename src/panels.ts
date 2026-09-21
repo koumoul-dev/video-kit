@@ -48,8 +48,8 @@ export function panelHtml (panel: PanelSpec, assets: OverlayAssets): string {
   </style></head><body>
     <div id="__demo-overlay">
       <div class="demo-card">
-        <div class="demo-accent"></div>
         <div class="demo-badge">${escapeHtml(panel.badge)}</div>
+        <div class="demo-accent"></div>
         <h1 class="demo-title demo-in">${escapeHtml(panel.title)}</h1>
         <p class="demo-subtitle demo-in">${escapeHtml(panel.text)}</p>
         <div class="demo-footer">${escapeHtml(panel.footer)}</div>

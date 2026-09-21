@@ -9,7 +9,7 @@ le rendu attendu et les règles à respecter quand on adapte un scénario.
 | Rôle | Valeur |
 | --- | --- |
 | Fond de carton | dégradé vertical `#0A2F5E` (haut) → `#1976D2` (bas) |
-| Bandeau supérieur + accent | `#81D4FA` |
+| Trait d'accent (sous le badge) | `#81D4FA` |
 | Texte de carton | blanc, badge en `#81D4FA` |
 | Sous-titres incrustés | texte blanc sur `#424242` translucide (`rgba(66,66,66,.86)`) |
 | Police | Nunito 400 / 600 / 700, sous-ensemble latin embarqué en base64 |
@@ -58,8 +58,8 @@ mode muet) : le montage fabrique des panneaux pleine page (`src/panels.ts`) et
 les insère entre les fragments vidéo ; le texte de lecture vient des citations
 de `script.md`, le titre du beat devient le titre du panneau.
 
-- **Même charte que les cartons** : dégradé `#0A2F5E → #1976D2`, bandeau
-  `#81D4FA`, Nunito embarquée, logo Koumoul, site (`carton_site`) ;
+- **Même charte que les cartons** : dégradé `#0A2F5E → #1976D2`, trait d'accent
+  `#81D4FA` sous le badge, Nunito embarquée, logo Koumoul, site (`carton_site`) ;
 - eyebrow numéroté (`01 / 05`), titre, texte de 1 à 2 phrases (viser ~100 à
   150 caractères, c'est un panneau, pas une page) ;
 - **durée = temps de lecture** (~2,6 mots/s, plancher 3 s) ;

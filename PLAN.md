@@ -1,5 +1,19 @@
 # Plan — validation du kit et suite
 
+## 0.3.1 — liseré retiré, accent sous le badge (21/09/2026)
+
+- Retrait du **liseré ciel** `#81D4FA` en tête des cartons et des panneaux
+  (`border-top` de `.demo-card`, retour du Salon : la bande gênait en format
+  social) ; seul le dégradé `#0A2F5E → #1976D2` subsiste.
+- Le **trait d'accent** `#81D4FA` passe **sous le badge** (ordre DOM
+  badge → accent) sur les cartons et les panneaux ; la carte de fin, sans badge,
+  est inchangée.
+- Docs du skill mises à jour (`references/charte.md`, `SKILL.md`).
+- Re-tournage : seul `pilotage/teaser-salon-data-ia` est refait (Salon du
+  22/09) ; `salon-data-ia-nantes` et `agents-back-office` gardent leur liseré
+  jusqu'à leur prochain tournage.
+- Publication : `npm publish` puis tag `v0.3.1`.
+
 ## 0.3.0 — habillage panneaux (18/09/2026)
 
 - `habillage: panneaux` : les citations de `script.md` deviennent des **panneaux
@@ -16,8 +30,8 @@
   CSS est maintenant calculée côté Node et passée en argument.
 - Validation : `salon-data-ia-nantes` (8 panneaux, 11 chargements coupés,
   3 min 04, aucune piste audio, contrôle visuel des panneaux et fragments).
-- **Pas encore publiée sur npm** (jeton npm absent le 18/09/2026) : lancer
-  `npm publish`, puis les consommateurs (`pilotage` attend `^0.3.0`).
+- Publiée sur npm (`latest` = 0.3.0) ; `pilotage` en `^0.3.0`, `documentation`
+  et `app-edit-map` encore en `^0.2.0`.
 
 État au 15/09/2026, **pause avant déplacement** :
 

@@ -87,9 +87,9 @@ Elles sont détaillées dans [references/charte.md](references/charte.md) ;
 l'essentiel :
 
 - **Cartons** à la charte Koumoul / Data Fair : dégradé `#0A2F5E → #1976D2`,
-  bandeau `#81D4FA`, police Nunito embarquée, logo Koumoul blanc, aucun asset
-  réseau (complet dès la première frame). L'intro est opaque, affichée ≥ 2,6 s et
-  sert de repère de calage au montage.
+  trait d'accent `#81D4FA` sous le badge, police Nunito embarquée, logo Koumoul
+  blanc, aucun asset réseau (complet dès la première frame). L'intro est opaque,
+  affichée ≥ 2,6 s et sert de repère de calage au montage.
 - **Pas de curseur factice sur les cartons** de début / fin : l'overlay pose
   `demo-cover` sur `<html>`, le curseur disparaît (il n'a de sens que sur
   l'interface). Jamais de curseur système à l'écran.

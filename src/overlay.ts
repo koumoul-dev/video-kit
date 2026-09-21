@@ -15,10 +15,9 @@
 // Tant qu'un carton recouvre l'appli (intro ou fin), l'overlay pose la classe
 // `demo-cover` sur <html> : human.ts s'en sert pour masquer le curseur factice.
 //
-// Charte : dégradé relevé sur l'OG datafair.cloud (bandeau secondaire #81D4FA
-// puis #0A2F5E → #1976D2), police Nunito embarquée en base64 (assets/charte) et
-// logo Koumoul blanc — aucun asset réseau, pour que le carton soit complet dès
-// la première frame.
+// Charte : dégradé relevé sur l'OG datafair.cloud (#0A2F5E → #1976D2), police
+// Nunito embarquée en base64 (assets/charte) et logo Koumoul blanc — aucun
+// asset réseau, pour que le carton soit complet dès la première frame.
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -76,7 +75,6 @@ export function habillageCss (fontsCss = ''): string {
           position: absolute; inset: 0; display: flex; flex-direction: column;
           align-items: center; justify-content: center; gap: 16px; text-align: center;
           padding: 0 48px;
-          border-top: 10px solid #81D4FA;
           background: linear-gradient(180deg, #0A2F5E 0%, #1976D2 100%);
           color: #fff;
         }
@@ -150,8 +148,8 @@ export async function installOverlay (context: BrowserContext, options: OverlayO
       root.id = '__demo-overlay'
       root.innerHTML = `
         <div id="__demo-intro" class="demo-card">
-          <div class="demo-accent"></div>
           <div class="demo-badge"></div>
+          <div class="demo-accent"></div>
           <h1 class="demo-title"></h1>
           <p class="demo-subtitle"></p>
           <div class="demo-footer"></div>
@@ -159,8 +157,8 @@ export async function installOverlay (context: BrowserContext, options: OverlayO
           <img class="demo-logo" alt="Koumoul">
         </div>
         <div id="__demo-outro" class="demo-card">
-          <div class="demo-accent"></div>
           <div class="demo-badge"></div>
+          <div class="demo-accent"></div>
           <h1 class="demo-title"></h1>
           <p class="demo-subtitle"></p>
           <div class="demo-footer"></div>
