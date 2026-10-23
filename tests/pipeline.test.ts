@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
 import { slotsBefore } from '../src/capture.ts'
 import { buildPanelParts, buildSilentCues, buildTimeMapper, calibration, findLoadingEnd, groupTokens, mergeIdleSegments, wrapCue } from '../src/mux.ts'
-import { captionHold, cardHtml, loadOverlayAssets } from '../src/overlay.ts'
+import { captionHold, cardHtml, frenchSpacing, loadOverlayAssets } from '../src/overlay.ts'
 import { panelBadge, panelDuration, panelHtml } from '../src/panels.ts'
 import { silentDuration } from '../src/tts.ts'
 import { parsePronunciations, parseScript, speakText, tokenize } from '../src/script.ts'
@@ -180,4 +180,12 @@ test('sous-titre : temps de lecture plancher', () => {
   assert.equal(captionHold('court'), 2200)
   assert.equal(captionHold('x'.repeat(60)), 5000)
   assert.equal(captionHold('x'.repeat(60), { cps: 10, minHold: 1000 }), 6000)
+})
+
+test('typographie française : espace insécable avant la ponctuation haute', () => {
+  assert.equal(frenchSpacing('étanches : chaque équipe'), 'étanches\u00a0: chaque équipe')
+  assert.equal(frenchSpacing('Prêt ? Oui !'), 'Prêt\u00a0? Oui\u00a0!')
+  assert.equal(frenchSpacing('« Tracez »'), '«\u00a0Tracez\u00a0»')
+  assert.equal(frenchSpacing('https://datafair.cloud'), 'https://datafair.cloud')
+  assert.match(cardHtml({ subtitle: 'trois choix : sur quoi' }, ''), /trois choix\u00a0: sur quoi/)
 })

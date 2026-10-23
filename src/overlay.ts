@@ -174,10 +174,21 @@ function escapeHtml (value: string | undefined): string {
     .replaceAll('"', '&quot;')
 }
 
+// Typographie française : espace insécable avant « : ; ! ? » et à l'intérieur
+// des guillemets, pour qu'aucune ligne ne commence par un signe isolé
+// (« étanches / : chaque équipe »). Appliquée à tout texte affiché par le kit.
+export function frenchSpacing (text: string): string {
+  return text.replace(/[ \u00a0\u202f]+([:;!?»])/g, '\u00a0$1').replace(/«[ \u00a0\u202f]+/g, '«\u00a0')
+}
+
+const frenchCard = <T extends Partial<OverlayCard>> (card: T): T =>
+  Object.fromEntries(Object.entries(card).map(([key, value]) => [key, typeof value === 'string' ? frenchSpacing(value) : value])) as T
+
 // Gabarit unique des cartons (intro, fin, panneaux). Les champs vides sont
 // masqués par la feuille (`:empty`) : la mise en page ne dépend pas des champs
 // renseignés, le logo et le site restent toujours au même endroit.
 export function cardHtml (card: Partial<OverlayCard>, attrs: string, logo?: string): string {
+  card = frenchCard(card)
   return `<div ${attrs} class="demo-card">
           <div class="demo-head"><div class="demo-badge">${escapeHtml(card.badge)}</div><div class="demo-accent"></div></div>
           <h1 class="demo-title">${escapeHtml(card.title)}</h1>
@@ -194,8 +205,8 @@ type OverlayInitOptions = Pick<OverlayOptions, 'intro' | 'outro'> & { css: strin
 export async function installOverlay (context: BrowserContext, options: OverlayOptions = {}) {
   const logo = options.assets?.logo
   const initOptions: OverlayInitOptions = {
-    intro: options.intro,
-    outro: options.outro ?? options.intro,
+    intro: options.intro && frenchCard(options.intro),
+    outro: (options.outro ?? options.intro) && frenchCard((options.outro ?? options.intro)!),
     css: habillageCss(options.assets?.fontsCss),
     html: `${cardHtml({}, 'id="__demo-intro"', logo)}${cardHtml({}, 'id="__demo-outro"', logo)}<div id="__demo-caption"><div class="caption-box"></div></div>`,
     captionRight: options.caption?.right ?? 0,
@@ -306,7 +317,7 @@ export async function installOverlay (context: BrowserContext, options: OverlayO
 }
 
 export async function showIntro (page: Page, card: OverlayCard) {
-  await page.evaluate(c => (window as any).__demoOverlay?.showIntro(c), card)
+  await page.evaluate(c => (window as any).__demoOverlay?.showIntro(c), frenchCard(card))
 }
 
 export async function hideIntro (page: Page, opts: { minVisibleMs?: number, fadeMs?: number } = {}) {
@@ -314,13 +325,13 @@ export async function hideIntro (page: Page, opts: { minVisibleMs?: number, fade
 }
 
 export async function setCaption (page: Page, text: string | null) {
-  await page.evaluate(t => (window as any).__demoOverlay?.setCaption(t), text)
+  await page.evaluate(t => (window as any).__demoOverlay?.setCaption(t), text && frenchSpacing(text))
 }
 
 // Carte de fin : même gabarit que l'intro ; sans carton, reprend l'intro à
 // l'identique (le site manquant est toujours repris de l'intro).
 export async function showOutro (page: Page, card?: OverlayCard) {
-  await page.evaluate(c => (window as any).__demoOverlay?.showOutro(c), card)
+  await page.evaluate(c => (window as any).__demoOverlay?.showOutro(c), card && frenchCard(card))
 }
 
 // Temps de lecture d'un sous-titre : `cps` caractères par seconde, jamais moins
