@@ -4,7 +4,7 @@
 script.md ──► tts (voix|muet) ──► recorder (Playwright) ──► timeline.json
                                         │                        │
                                         ▼                        ▼
-                                      out/*.webm ──────────► mux ──► out/*.mp4 + .srt (+ .st.mp4)
+                                      out/*.raw.mkv ───────► mux ──► out/*.mp4 + .srt (+ .st.mp4)
 ```
 
 ## 1. Synthèse (`koumoul-video tts`)
@@ -32,8 +32,22 @@ script.md ──► tts (voix|muet) ──► recorder (Playwright) ──► ti
      (`contentT0` dans la timeline) : le montage coupe le chargement jusque-là.
 3. Les attentes marquées `idle.begin(factor)` sont notées dans la timeline
    (facteur ×6 par défaut, ×10 pour les traitements techniques).
-4. Le WebM brut est écrit dans `out/<video>.webm`, la timeline dans
-   `out/<video>.timeline.json` (largeur, hauteur, cardT0, beats, idles).
+4. La vidéo brute est écrite dans `out/<video>.raw.mkv`, la timeline dans
+   `out/<video>.timeline.json` (largeur, hauteur, cardT0, `videoStartWall`,
+   beats, idles).
+
+**Capture** : chaque image du screencast Playwright (`page.screencast`,
+Playwright ≥ 1.59, JPEG qualité 90, jusqu'à 60 images/s) est horodatée sur
+l'horloge murale et écrite dans un ffmpeg local à 25 images/s, en H.264 quasi
+sans perte (`-crf 10`) : une image est répétée tant que la page ne change pas.
+`recordVideo` n'est plus utilisé : son encodage VP8 temps réel à 1 Mbit/s
+rendait le texte baveux et laissait des traînées sur tout ce qui bouge.
+L'horodatage de la première image (`videoStartWall`) sert au calage exact du
+montage.
+
+**Polices** : toutes les 3 s, les pages et iframes dont le texte s'affiche dans
+une police de repli sont journalisées (`⚠ police …`) puis récapitulées en fin de
+tournage (voir [charte.md](charte.md)).
 
 Options utiles : `--headed` (mise au point), `--url <url>` (page ouverte avant
 le scénario), `--no-tts` (réutilise l'audio), `--profile`, `--state`, `--no-state`
@@ -41,9 +55,11 @@ le scénario), `--no-tts` (réutilise l'audio), `--profile`, `--state`, `--no-st
 
 ## 3. Montage (`koumoul-video mux`)
 
-- **Recalage** : détection du passage blanc → carton (changement de scène),
-  coupe de l'amorce ; sans carton (format court), détection du premier rendu par
-  luminance (`signalstats` sur une zone centrale).
+- **Calage** : exact quand la timeline porte `videoStartWall` (horodatage des
+  images, kit ≥ 0.4) : l'amorce est coupée à l'instant où le carton est peint
+  (+ 0,1 s). Un ancien brut WebM retombe sur la détection du passage blanc →
+  carton (changement de scène). Sans carton (format court), détection du
+  premier rendu par luminance (`signalstats` sur une zone centrale).
 - **Sous-titres** : découpage en cues de 2 lignes (~40 caractères), calées mot à
   mot (voix) ou ancrées sur la scène (muet, ~13 caractères/s).
 - **Habillage panneaux** (`habillage: panneaux`, muet) : chaque citation devient
@@ -55,9 +71,10 @@ le scénario), `--no-tts` (réutilise l'audio), `--profile`, `--state`, `--no-st
   affine par morceaux ; les segments sont encodés **morceau par morceau** puis
   assemblés par le concat demuxer (un graphe unique bufferise tout le 1080p en
   mémoire et se fait tuer au-delà de quelques minutes).
-- **Sorties** : `out/<video>.mp4` (H.264, + AAC en voix), `out/<video>.srt`,
-  `out/<video>.st.mp4` avec `--burn` (sous-titres incrustés sur bandeau sombre).
-- `--offset <s>` force le calage quand la détection échoue.
+- **Sorties** : `out/<video>.mp4` (H.264 `-preset slow -crf 18 -tune
+  stillimage`, + AAC en voix), `out/<video>.srt`, `out/<video>.st.mp4` avec
+  `--burn` (sous-titres incrustés en Nunito SemiBold sur bandeau `#424242`).
+- `--offset <s>` force le calage (anciens bruts dont la détection échoue).
 
 ## 4. Nettoyage (`koumoul-video clean`)
 
@@ -88,7 +105,7 @@ jeu de données / de l'application de démonstration.
     "video:clean": "koumoul-video clean --videos-dir produits/videos"
   },
   "devDependencies": {
-    "@koumoul/video-kit": "^0.1.0",
+    "@koumoul/video-kit": "^0.4.0",
     "@playwright/test": "^1.62.1"
   }
 }
@@ -98,7 +115,6 @@ jeu de données / de l'application de démonstration.
 
 ```gitignore
 videos/**/out/
-videos/**/raw/
 videos/.auth/
-# formats courts : envisager videos/*.webm et videos/*.mp4
+# formats courts : envisager videos/*.mp4
 ```

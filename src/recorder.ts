@@ -12,19 +12,39 @@
 // L'authentification se fait par le proxy NHI (session de test) : voir auth.ts
 // et `skills/demo-videos/references/auth.md`.
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { chromium, type BrowserContext, type Page } from '@playwright/test'
 import { ensureProxyAuth, mcpLaunchOptions } from './auth.ts'
+import { startCapture } from './capture.ts'
 import { installCursor, sleep } from './human.ts'
-import { hideIntro, installOverlay, loadOverlayAssets, showIntro, type OverlayCard } from './overlay.ts'
+import { hideIntro, installOverlay, loadOverlayAssets, showIntro, type OverlayCard, type OverlayOptions } from './overlay.ts'
 import { parseScript, type Script } from './script.ts'
 import { prepareNarration, type NarratedBeat } from './tts.ts'
 import { IDLE_FACTOR, type Timeline, type TimelineBeat, type TimelineIdle } from './timeline.ts'
 
 const GAP_AFTER_NARRATION = 0.7
+
+// Pages dont le texte s'affiche dans une police de repli : police en erreur
+// (`document.fonts`) ou corps de page resté dans la police par défaut du
+// navigateur (feuille de thème non chargée). Les iframes vides sont ignorées.
+async function fontIssues (page: Page): Promise<string[]> {
+  const issues: string[] = []
+  for (const frame of page.frames()) {
+    const found = await frame.evaluate(() => {
+      if (!document.body || !document.body.innerText.trim()) return undefined
+      const failed = [...document.fonts].filter(font => font.status === 'error').map(font => font.family.replaceAll('"', ''))
+      return { failed: [...new Set(failed)], family: getComputedStyle(document.body).fontFamily }
+    }).catch(() => undefined)
+    if (!found) continue
+    const where = frame.url().slice(0, 120)
+    if (found.failed.length) issues.push(`police non chargée (${found.failed.join(', ')}) — ${where}`)
+    if (/^\s*("?Times New Roman"?|serif)\s*(,|$)/i.test(found.family)) issues.push(`texte en police par défaut du navigateur (${found.family}) — ${where}`)
+  }
+  return issues
+}
 
 export interface BeatRunner {
   (id: string, actions: (page: Page) => Promise<void>): Promise<void>
@@ -97,10 +117,10 @@ export async function record (opts: RecordOptions) {
 
   const videoDir = resolve(videosDir, videoName)
   const outDir = resolve(videoDir, 'out')
-  const rawDir = resolve(outDir, 'raw')
   if (!existsSync(videoDir)) throw new Error(`Dossier vidéo introuvable : ${videoDir}`)
-  mkdirSync(rawDir, { recursive: true })
-  for (const file of readdirSync(rawDir)) rmSync(resolve(rawDir, file), { recursive: true, force: true })
+  mkdirSync(outDir, { recursive: true })
+  // ancien brut WebM (kit < 0.4) : le montage le prendrait pour celui-ci
+  rmSync(resolve(outDir, `${videoName}.webm`), { force: true })
 
   // script.md est la source de vérité de la narration ; il est optionnel pour
   // les formats courts pilotés entièrement par le scénario (sous-titres
@@ -115,6 +135,8 @@ export async function record (opts: RecordOptions) {
   const scenario = await import(pathToFileURL(scenarioPath).href) as {
     default: (ctx: ScenarioContext) => Promise<void>
     intro?: OverlayCard
+    // style des sous-titres incrustés (`export const caption = { style: 'plain' }`)
+    caption?: OverlayOptions['caption']
   }
 
   const introCard: OverlayCard | undefined = opts.intro ?? scenario.intro ?? (script
@@ -150,7 +172,10 @@ export async function record (opts: RecordOptions) {
   let useState = opts.noState ? undefined : opts.state
   const launchOptions = mcpLaunchOptions()
   const chromeArgs = { channel: 'chrome' as const, headless: !opts.headed }
-  if (!useState && !opts.profile) {
+  // `--no-state` et les pages locales (`file://`, schémas animés) se passent de
+  // session : pas de récolte par le proxy NHI
+  const needsSession = !opts.noState && !opts.url?.startsWith('file:')
+  if (needsSession && !useState && !opts.profile) {
     useState = resolve(videosDir, '.auth/state.json')
     await ensureProxyAuth(useState, { log })
   }
@@ -169,7 +194,6 @@ export async function record (opts: RecordOptions) {
       deviceScaleFactor: 1,
       locale: 'fr-FR',
       timezoneId: 'Europe/Paris',
-      recordVideo: { dir: rawDir, size: { width, height } },
       ...launchOptions,
       args: ['--force-color-profile=srgb', ...(launchOptions.args ?? [])]
     })
@@ -184,7 +208,6 @@ export async function record (opts: RecordOptions) {
       deviceScaleFactor: 1,
       locale: 'fr-FR',
       timezoneId: 'Europe/Paris',
-      recordVideo: { dir: rawDir, size: { width, height } },
       storageState: useState
     })
   }
@@ -192,11 +215,27 @@ export async function record (opts: RecordOptions) {
   await installCursor(browser)
   await installOverlay(browser, {
     intro: script ? undefined : introCard,
+    site: introCard?.site,
     assets: loadOverlayAssets(),
-    caption: { right: opts.captionRight }
+    caption: { right: opts.captionRight ?? scenario.caption?.right, style: scenario.caption?.style }
   })
   const page = browser.pages()[0] ?? await browser.newPage()
   page.setDefaultTimeout(20_000)
+  const rawPath = resolve(outDir, `${videoName}.raw.mkv`)
+  const capture = await startCapture(page, rawPath, { width, height })
+
+  // garde-fou des polices, relevé toutes les 3 s : une police manquante passe
+  // inaperçue au tournage et se voit sur toute la vidéo
+  const fontWarnings = new Set<string>()
+  const fontTimer = setInterval(() => {
+    fontIssues(page).then((issues) => {
+      for (const issue of issues) {
+        if (fontWarnings.has(issue)) continue
+        fontWarnings.add(issue)
+        log(`⚠ ${issue}`)
+      }
+    }).catch(() => {})
+  }, 3000)
 
   page.on('console', (msg) => {
     if (msg.type() !== 'error') return
@@ -210,6 +249,7 @@ export async function record (opts: RecordOptions) {
   })
 
   let originWall = Date.now()
+  let videoStartWall: number | undefined
   let cardT0 = 0
   const timelineBeats: TimelineBeat[] = []
   const idles: TimelineIdle[] = []
@@ -288,6 +328,7 @@ export async function record (opts: RecordOptions) {
     console.error(err)
     process.exitCode = 1
   } finally {
+    clearInterval(fontTimer)
     idle.end()
     // prolonge la session depuis la page (pile réseau du navigateur, qui gère le
     // certificat du proxy) puis ré-exporte les cookies rafraîchis
@@ -300,28 +341,31 @@ export async function record (opts: RecordOptions) {
         log('rafraîchissement des cookies impossible (session expirée ?)')
       }
     }
+    videoStartWall = await capture.stop()
     await browser.close()
     await ownedBrowser?.close()
   }
 
-  const webmPath = resolve(outDir, `${videoName}.webm`)
-  const recorded = await page.video()?.path()
-  if (!recorded || !existsSync(recorded)) {
+  if (videoStartWall === undefined || !existsSync(rawPath)) {
     throw new Error('Aucune vidéo produite.')
   }
-  renameSync(recorded, webmPath)
   const timeline: Timeline = {
     video: videoName,
     width,
     height,
     originWall,
+    videoStartWall,
     cardT0,
     endWall: (Date.now() - originWall) / 1000,
     beats: timelineBeats,
     idles
   }
   writeFileSync(resolve(outDir, `${videoName}.timeline.json`), JSON.stringify(timeline, null, 2) + '\n')
-  log(`WebM : ${webmPath}`)
+  log(`Vidéo brute : ${rawPath}`)
+  if (fontWarnings.size) {
+    console.warn(`⚠ ${fontWarnings.size} avertissement(s) de police : relire les passages concernés avant diffusion.`)
+    for (const warning of fontWarnings) console.warn(`  - ${warning}`)
+  }
 
   if (opts.mux && !process.exitCode) {
     const { mux } = await import('./mux.ts')

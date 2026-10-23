@@ -1,10 +1,11 @@
 // Assemble la piste de narration et la vidéo.
 //
-// Le t=0 de la vidéo est recalé sur le carton de titre (détection du changement
-// de scène blanc → bleu), puis chaque narration est placée à son horodatage
-// (timeline écrite par recorder.ts), mise à l'échelle sur la durée réelle du
-// WebM. Produit out/<video>.mp4 (H.264/AAC) et out/<video>.srt ; `--burn` produit
-// en plus out/<video>.st.mp4 avec les sous-titres incrustés (bandeau sombre).
+// Le t=0 de la vidéo est calé sur le carton de titre : par l'horodatage de la
+// première image (`videoStartWall`, capture du kit ≥ 0.4), sinon par détection
+// du changement de scène blanc → bleu (ancien brut WebM), puis chaque narration
+// est placée à son horodatage (timeline écrite par recorder.ts). Produit
+// out/<video>.mp4 (H.264/AAC) et out/<video>.srt ; `--burn` produit en plus
+// out/<video>.st.mp4 avec les sous-titres incrustés (bandeau sombre, Nunito).
 //
 // Les sous-titres sont découpés en cues de 2 lignes maximum. Mode voix : calés
 // mot à mot sur la narration (timings edge-tts). Mode muet : ancrés sur la durée
@@ -18,6 +19,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
+import { CHARTE_DIR } from './paths.ts'
 import { panelBadge, panelDuration, renderPanelPng, type PanelSpec } from './panels.ts'
 import { parsePronunciations, parseScript, speakText, wordCore, type PronunciationRule } from './script.ts'
 import { ffprobeDuration, type WordTiming } from './tts.ts'
@@ -40,6 +42,23 @@ const WEAK_BREAK_WORDS = new Set([
 
 export interface MuxOptions { offset?: number, burn?: boolean }
 
+// Encodage de diffusion, commun à tous les segments (le concat demuxer recolle
+// des morceaux aux paramètres identiques). `-tune stillimage` garde le texte
+// d'interface net ; le grain des cartons évite les bandes du dégradé.
+const X264 = ['-c:v', 'libx264', '-preset', 'slow', '-crf', '18', '-tune', 'stillimage', '-pix_fmt', 'yuv420p']
+
+// Calage temps mur → temps source quand la timeline porte l'horodatage de la
+// première image : exact, sans échelle ni détection. `cardT0` est relevé quand
+// le carton est posé, avant qu'il soit peint : la coupe prend une marge de
+// 0,1 s (deux images) pour ne pas garder une image du flash blanc. Exporté
+// pour les tests.
+export const CARD_PAINT_MARGIN = 0.1
+export function exactCalibration (timeline: Pick<Timeline, 'originWall' | 'videoStartWall' | 'cardT0'>): { bSource: number, cardTime: number } | undefined {
+  if (timeline.videoStartWall === undefined) return undefined
+  const bSource = (timeline.originWall - timeline.videoStartWall) / 1000
+  return { bSource, cardTime: Math.max(0, timeline.cardT0 + bSource + CARD_PAINT_MARGIN) }
+}
+
 interface Cue {
   start: number
   end: number
@@ -48,10 +67,10 @@ interface Cue {
 
 // Détecte le passage écran blanc → carton : premier changement de scène suivi
 // d'une longue période statique (le carton reste affiché pendant la narration).
-function detectCardTime (webm: string): number | undefined {
+function detectCardTime (source: string): number | undefined {
   const res = spawnSync('ffmpeg', [
     '-loglevel', 'error',
-    '-i', webm,
+    '-i', source,
     '-vf', "select='gt(scene,0.25)',metadata=print:file=-",
     '-an', '-f', 'null', '-'
   ], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
@@ -460,8 +479,9 @@ export function buildPanelParts (beats: PanelPartBeat[], idles: TimeSegment[]): 
 export async function mux (videoName: string, videosDir: string, opts: MuxOptions = {}) {
   const videoDir = resolve(videosDir, videoName)
   const outDir = resolve(videoDir, 'out')
-  const webm = resolve(outDir, `${videoName}.webm`)
-  if (!existsSync(webm)) throw new Error(`WebM introuvable : ${webm} (lancez d'abord la commande record).`)
+  // brut du kit ≥ 0.4 (capture horodatée), sinon ancien WebM de Playwright
+  const source = [`${videoName}.raw.mkv`, `${videoName}.webm`].map(name => resolve(outDir, name)).find(path => existsSync(path))
+  if (!source) throw new Error(`Vidéo brute introuvable dans ${outDir} (lancez d'abord la commande record).`)
   const timeline = JSON.parse(readFileSync(resolve(outDir, `${videoName}.timeline.json`), 'utf8')) as Timeline
   const scriptPath = resolve(videoDir, 'script.md')
   const script = existsSync(scriptPath) ? parseScript(scriptPath) : undefined
@@ -475,26 +495,34 @@ export async function mux (videoName: string, videosDir: string, opts: MuxOption
     if (meta.words?.length) wordsById.set(beat.id, meta.words)
   }
 
-  const videoDur = ffprobeDuration(webm)
+  const videoDur = ffprobeDuration(source)
   const beats = timeline.beats.filter(beat => textById.has(beat.id))
   const isMute = !beats.some(beat => existsSync(resolve(outDir, 'audio', `${beat.id}.mp3`)))
   const size = timeline.width && timeline.height
     ? { width: timeline.width, height: timeline.height }
-    : videoSize(webm)
+    : videoSize(source)
 
   let a: number
   // temps mur → temps de sortie pré-compression (source décalée de l'amorce)
   let b: number
-  // temps mur → temps source (WebM brut), pour les découpes ffmpeg
+  // temps mur → temps source (vidéo brute), pour les découpes ffmpeg
   let bSource: number
   let startAt = 0
+  const exact = exactCalibration(timeline)
   if (opts.offset !== undefined) {
     a = 1
     b = opts.offset
     bSource = opts.offset
+  } else if (beats.length && exact) {
+    // horodatage de la première image : t=0 sur le carton, sans détection
+    a = 1
+    bSource = exact.bSource
+    b = bSource
+    startAt = exact.cardTime
+    console.log(`Calage exact sur l'horodatage des images : carton à ${startAt.toFixed(2)}s`)
   } else if (beats.length) {
     // carton de titre : repère de calage (blanc → bleu) et coupe du préambule
-    const detected = detectCardTime(webm)
+    const detected = detectCardTime(source)
     if (detected !== undefined) {
       a = timeline.endWall > 5 ? videoDur / timeline.endWall : 1
       bSource = detected - a * timeline.cardT0
@@ -509,7 +537,7 @@ export async function mux (videoName: string, videosDir: string, opts: MuxOption
     }
   } else {
     // format court sans carton : détection du premier rendu par luminance
-    startAt = detectStart(webm, size.width, size.height)
+    startAt = detectStart(source, size.width, size.height)
     a = 1
     b = -startAt
     bSource = 0
@@ -542,7 +570,7 @@ export async function mux (videoName: string, videosDir: string, opts: MuxOption
   if (isPanelMode && audioBeats.length) {
     throw new Error('Habillage panneaux : incompatible avec une narration audio (utiliser fournisseur: muet).')
   }
-  const fps = isPanelMode ? videoFps(webm) : 25
+  const fps = isPanelMode ? videoFps(source) : 25
   const beatTitles = new Map((script?.beats ?? []).map(beat => [beat.id, beat.title]))
   const panelBeats = isPanelMode
     ? beats.slice(1, -1).filter(beat => (textById.get(beat.id) ?? '').trim())
@@ -566,7 +594,7 @@ export async function mux (videoName: string, videosDir: string, opts: MuxOption
   if (isPanelMode) {
     let cut = 0
     for (const beat of beats.slice(1)) {
-      // découpes exprimées en temps source (WebM brut)
+      // découpes exprimées en temps source (vidéo brute)
       const from = a * beat.t0 + bSource
       const to = a * beat.t1 + bSource
       // marque explicite du scénario (`mark()`) : coupe précise du chargement
@@ -582,7 +610,7 @@ export async function mux (videoName: string, videosDir: string, opts: MuxOption
       }
       const window = Math.min(20, to - from)
       if (window <= 1) continue
-      const detected = detectLoadingEnd(webm, size.width, size.height, from, window)
+      const detected = detectLoadingEnd(source, size.width, size.height, from, window)
       if (detected !== undefined && detected - from > 0.15 && detected < to) {
         trims.set(beat.id, detected)
         cut += 1
@@ -596,15 +624,16 @@ export async function mux (videoName: string, videosDir: string, opts: MuxOption
   // Découpage temps réel → temps vidéo (attentes compressées, facteur par
   // attente) : chaque morceau est encodé séparément puis assemblé par le concat
   // demuxer. Un graphe trim/concat en une seule passe bufferise toutes les
-  // images du WebM en mémoire (SIGKILL au-delà de quelques minutes de 1080p).
+  // images de la vidéo brute en mémoire (SIGKILL au-delà de quelques minutes de 1080p).
   // En habillage panneaux, les morceaux sont les fragments (précédés de leur
   // panneau) : les temps de chargement entre fragments ne sont pas repris.
   let partList: MuxPart[] | undefined
   if (isPanelMode) {
-    partList = buildPanelParts(beats.map((beat) => {
+    partList = buildPanelParts(beats.map((beat, index) => {
       const panel = panels.find(candidate => candidate.beatId === beat.id)
       return {
-        start: trims.get(beat.id) ?? a * beat.t0 + bSource,
+        // le premier morceau démarre sur le carton peint (amorce coupée)
+        start: trims.get(beat.id) ?? Math.max(a * beat.t0 + bSource, index === 0 ? startAt : 0),
         end: a * beat.t1 + bSource,
         panel: panel ? { spec: panel.spec, duration: panel.duration } : undefined
       }
@@ -709,7 +738,7 @@ export async function mux (videoName: string, videosDir: string, opts: MuxOption
           '-y', '-loglevel', 'error',
           '-loop', '1', '-framerate', String(fps), '-i', png,
           '-t', part.panel.duration.toFixed(3),
-          '-an', '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p',
+          '-an', ...X264,
           '-r', String(fps),
           segPath
         ]
@@ -717,9 +746,9 @@ export async function mux (videoName: string, videosDir: string, opts: MuxOption
       } else {
         segArgs = [
           '-y', '-loglevel', 'error',
-          '-ss', part.start.toFixed(3), '-to', part.end.toFixed(3), '-i', webm,
+          '-ss', part.start.toFixed(3), '-to', part.end.toFixed(3), '-i', source,
           '-vf', part.factor === 1 ? 'setpts=PTS-STARTPTS' : `setpts=(PTS-STARTPTS)/${part.factor}`,
-          '-an', '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p',
+          '-an', ...X264,
           segPath
         ]
         label = `morceau ${index + 1}/${partList.length} (${(part.end - part.start).toFixed(1)}s${part.factor === 1 ? '' : ` / ×${part.factor}`})`
@@ -738,19 +767,19 @@ export async function mux (videoName: string, videosDir: string, opts: MuxOption
     : [
         '-y', '-loglevel', 'warning',
         ...(startAt > 0 ? ['-ss', startAt.toFixed(3)] : []),
-        '-i', webm, ...inputs
+        '-i', source, ...inputs
       ]
   if (audioBeats.length) {
     args.push(
       '-filter_complex', filterComplex,
       '-map', '0:v', '-map', '[aout]',
-      '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p',
+      ...X264,
       '-c:a', 'aac', '-b:a', '192k'
     )
   } else if (!concatList) {
     args.push(
       '-map', '0:v', '-an',
-      '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p'
+      ...X264
     )
   }
   args.push('-movflags', '+faststart', '-t', outputDur.toFixed(3), mp4)
@@ -767,13 +796,16 @@ export async function mux (videoName: string, videosDir: string, opts: MuxOption
       console.warn('Incrustation ignorée : aucun sous-titre (format court, déjà incrustés).')
     } else {
       const stMp4 = resolve(outDir, `${videoName}.st.mp4`)
-      const style = 'FontName=DejaVu Sans,FontSize=12,PrimaryColour=&H00FFFFFF,BackColour=&H40000000,BorderStyle=4,Outline=0,Shadow=0,Alignment=2,MarginV=30'
+      // Nunito de la charte (TTF dans charte/libass : libass ne lit pas le woff2
+      // et essaie d'ouvrir chaque fichier du dossier comme une police) ; sans
+      // `fontsdir`, libass retombait sur une police système
+      const style = 'FontName=Nunito SemiBold,FontSize=12,PrimaryColour=&H00FFFFFF,BackColour=&H40424242,BorderStyle=4,Outline=0,Shadow=0,Alignment=2,MarginV=30'
       console.log('Incrustation des sous-titres (bandeau sombre)…')
       const burn = spawnSync('ffmpeg', [
         '-y', '-loglevel', 'warning',
         '-i', mp4,
-        '-vf', `subtitles=${videoName}.srt:force_style='${style}'`,
-        '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p',
+        '-vf', `subtitles=${videoName}.srt:fontsdir=${resolve(CHARTE_DIR, 'libass')}:force_style='${style}'`,
+        ...X264,
         '-c:a', 'copy',
         '-movflags', '+faststart',
         stMp4

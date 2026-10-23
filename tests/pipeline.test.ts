@@ -1,7 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
-import { buildPanelParts, buildSilentCues, buildTimeMapper, findLoadingEnd, groupTokens, mergeIdleSegments, wrapCue } from '../src/mux.ts'
+import { slotsBefore } from '../src/capture.ts'
+import { buildPanelParts, buildSilentCues, buildTimeMapper, exactCalibration, findLoadingEnd, groupTokens, mergeIdleSegments, wrapCue } from '../src/mux.ts'
+import { captionHold, cardHtml, loadOverlayAssets } from '../src/overlay.ts'
 import { panelBadge, panelDuration, panelHtml } from '../src/panels.ts'
 import { silentDuration } from '../src/tts.ts'
 import { parsePronunciations, parseScript, speakText, tokenize } from '../src/script.ts'
@@ -91,8 +93,8 @@ test('panneaux : HTML à la charte, texte échappé, logo embarqué', () => {
   assert.match(html, /Portail &lt;open&gt; data/)
   assert.match(html, /Catalogue &amp; API/)
   assert.match(html, /demo-badge">02 \/ 08/)
-  assert.match(html, /demo-title demo-in/)
-  assert.match(html, /demo-logo" alt="Koumoul" src="data:image\/png;base64,AAAA"/)
+  // même gabarit que les cartons : logo et site regroupés en bas
+  assert.match(html, /class="demo-brand"><img class="demo-logo" alt="Koumoul" src="data:image\/png;base64,AAAA"><div class="demo-site">datafair.cloud/)
   assert.ok(!html.includes('<script'))
 })
 
@@ -143,4 +145,38 @@ test('badge des panneaux : numérotation par défaut, libellé du front matter s
   assert.equal(panelBadge(undefined, 0, 9), '01 / 09')
   assert.equal(panelBadge('  ', 2, 12), '03 / 12')
   assert.equal(panelBadge(' Data Fair ', 0, 9), 'Data Fair')
+})
+
+test('capture : images répétées à cadence fixe d’après l’horodatage', () => {
+  // 25 i/s : un créneau de 40 ms
+  assert.equal(slotsBefore(1000, 1000), 0)
+  assert.equal(slotsBefore(1000, 1001), 1)
+  assert.equal(slotsBefore(1000, 1040), 1)
+  assert.equal(slotsBefore(1000, 1041), 2)
+  assert.equal(slotsBefore(1000, 3000), 50)
+  assert.equal(slotsBefore(1000, 900), 0)
+})
+
+test('calage exact : horodatage de la première image, sinon détection', () => {
+  assert.equal(exactCalibration({ originWall: 10_000, cardT0: 0.8 }), undefined)
+  const exact = exactCalibration({ originWall: 12_500, videoStartWall: 10_000, cardT0: 0.8 })
+  assert.equal(exact?.bSource, 2.5)
+  assert.equal(exact?.cardTime, 3.4)
+})
+
+test('carton : gabarit unique, champs vides gardés pour la mise en page', () => {
+  const html = cardHtml({ title: 'Toutes vos <données>' }, 'id="x"')
+  assert.match(html, /<div class="demo-badge"><\/div><div class="demo-accent"><\/div>/)
+  assert.match(html, /Toutes vos &lt;données&gt;/)
+  assert.match(html, /<img class="demo-logo" alt="Koumoul"><div class="demo-site"><\/div>/)
+})
+
+test('charte : logo officiel en SVG embarqué', () => {
+  assert.match(loadOverlayAssets().logo ?? '', /^data:image\/svg\+xml;base64,/)
+})
+
+test('sous-titre : temps de lecture plancher', () => {
+  assert.equal(captionHold('court'), 2200)
+  assert.equal(captionHold('x'.repeat(60)), 5000)
+  assert.equal(captionHold('x'.repeat(60), { cps: 10, minHold: 1000 }), 6000)
 })

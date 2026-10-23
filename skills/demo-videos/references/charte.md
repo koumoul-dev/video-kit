@@ -6,18 +6,52 @@ le rendu attendu et les règles à respecter quand on adapte un scénario.
 
 ## Couleurs et typographie
 
+Les couleurs sont celles du thème par défaut de data-fair
+(`@data-fair/lib-common-types/theme`), complétées par celles du portail
+datafair.cloud pour le texte sur fond clair. Ne pas en inventer d'autres, y
+compris dans les schémas animés maison des formats courts.
+
 | Rôle | Valeur |
 | --- | --- |
-| Fond de carton | dégradé vertical `#0A2F5E` (haut) → `#1976D2` (bas) |
-| Trait d'accent (sous le badge) | `#81D4FA` |
-| Texte de carton | blanc, badge en `#81D4FA` |
-| Sous-titres incrustés | texte blanc sur `#424242` translucide (`rgba(66,66,66,.86)`) |
-| Police | Nunito 400 / 600 / 700, sous-ensemble latin embarqué en base64 |
-| Logo | Koumoul blanc « La donnée accessible » (`logo-slogan-white.png`) |
+| Fond de carton | dégradé vertical `#0D47A1` (blue-darken-4, haut) → `#1976D2` (primary, bas), grain fixe ~3 % |
+| Trait d'accent et badge | `#81D4FA` (secondary) |
+| Texte de carton | blanc |
+| Sous-titres incrustés | texte blanc sur `#424242` (surface-inverse) translucide |
+| Sous-titres `plain` | texte `#1F2937` (on-background de datafair.cloud), halo blanc, sans bandeau |
+| Fond clair des schémas | `#F8FBFE` (background de datafair.cloud) |
+| Police | Nunito 400 / 600 / 700, sous-ensemble latin embarqué en base64 ; TTF 600 pour l'incrustation `.st.mp4` |
+| Logo | Koumoul blanc « La donnée accessible », SVG officiel (`logo-slogan-white.svg`) |
 
-Les tailles de police sont exprimées en `vw` (titre ≈ 6,1 vw plafonné à 78 px,
-sous-titre ≈ 2,8 vw, badge ≈ 2 vw) : le même habillage tient en 720p comme en
-1080p.
+Le logo vient du jeu officiel du dépôt `communication`
+(`logos/svg/logo-slogan-white.svg`, texte vectorisé). Le remplacer par une
+nouvelle version de ce fichier, jamais par un PNG exporté d'ailleurs.
+
+Les tailles sont exprimées en `vh` (titre 10,6 vh, sous-titre 4,9 vh, badge
+3,4 vh, logo 7,4 vh, site 2,8 vh), sans plafond en pixels : un carton 1080p a
+exactement les proportions d'un carton 720p.
+
+Le grain évite que l'encodage H.264, puis le réencodage des réseaux sociaux,
+découpe le dégradé en bandes. Il est fixe (pas de scintillement) et invisible à
+l'œil nu.
+
+## Un seul gabarit de carte
+
+Intro, fin et panneaux du montage partagent le même gabarit (`cardHtml`) :
+
+```
+            BADGE (facultatif)
+                ───            trait d'accent, toujours présent
+          Titre sur une ou
+             deux lignes
+      Sous-titre (facultatif)
+
+             [logo Koumoul]    toujours en bas, au même endroit
+              site.exemple     sous le logo
+```
+
+Un champ vide est masqué sans déplacer le reste : le trait, le logo et le site
+ne bougent pas d'un carton à l'autre. Le site va dans le champ `site`, jamais
+dans `subtitle`.
 
 ## Cartons d'introduction et de fin
 
@@ -26,11 +60,15 @@ sous-titre ≈ 2,8 vw, badge ≈ 2 vw) : le même habillage tient en 720p comme 
   une frame blanche.
 - **Intro ≥ 2,6 s** (`hideIntro` applique `minVisibleMs` par défaut), le temps de
   lire le titre ; l'affichage est suivi d'un fondu de ~380 ms.
-- **Repère de calage** : le montage recale le t = 0 sur le passage écran blanc →
-  carton (changement de scène), puis coupe l'amorce (chargement, flash blanc).
-  Ne pas supprimer ce flash quand le mode à beats est utilisé.
-- **Fin** : carte affichée par-dessus l'écran final, avec le site (`datafair.cloud`,
-  `koumoul.com`…) ; le curseur est masqué comme sur l'intro.
+- **Calage** : la vidéo brute est horodatée image par image ; le montage coupe
+  l'amorce (chargement, flash blanc) à l'instant où le carton est peint, sans
+  détection. Le flash blanc reste le repère des anciens bruts WebM : ne pas le
+  supprimer.
+- **Fin** : même gabarit que l'intro, posé par-dessus l'écran final avec une
+  phrase d'appel en titre. Le site est repris de l'intro (`carton_site`, ou
+  `site` de l'`intro` exportée) quand `showOutro` ne le fournit pas ; passer
+  `site: ''` pour l'omettre volontairement. Le curseur est masqué comme sur
+  l'intro.
 
 Le carton reprend le front matter de `script.md` :
 
@@ -47,7 +85,8 @@ Pour un format court (sans `script.md`), le scénario exporte son accroche :
 export const intro = {
   badge: 'Data Fair · démonstration',
   title: 'Éditez vos données cartographiques sans SIG',
-  subtitle: 'Ajouter un point, corriger un tracé, changer une couleur — en direct'
+  subtitle: 'Ajouter un point, corriger un tracé, changer une couleur — en direct',
+  site: 'datafair.cloud'
 }
 ```
 
@@ -58,16 +97,16 @@ mode muet) : le montage fabrique des panneaux pleine page (`src/panels.ts`) et
 les insère entre les fragments vidéo ; le texte de lecture vient des citations
 de `script.md`, le titre du beat devient le titre du panneau.
 
-- **Même charte que les cartons** : dégradé `#0A2F5E → #1976D2`, trait d'accent
-  `#81D4FA` sous le badge, Nunito embarquée, logo Koumoul, site (`carton_site`) ;
+- **Même gabarit que les cartons** (voir plus haut), site `carton_site` ;
 - eyebrow : numérotation `01 / 05` par défaut, remplaçable par un libellé de
   front matter (`panneaux_badge: Data Fair`, ex. marque ou événement) ; titre,
   texte de 1 à 2 phrases (viser ~100 à 150 caractères, c'est un panneau, pas une
   page) ;
 - **durée = temps de lecture** (~2,6 mots/s, plancher 3 s) ;
-- rendu PNG par Chromium headless **sans animation** (transitions neutralisées) :
-  l'image est déterministe, le panneau est encodé en segment muet à la cadence
-  de la vidéo puis recollé au concat demuxer ;
+- rendu PNG par Chromium headless **sans animation** (transitions neutralisées,
+  chaque graisse de Nunito chargée avant la capture) : l'image est déterministe,
+  le panneau est encodé en segment muet à la cadence de la vidéo puis recollé au
+  concat demuxer ;
 - le chargement de chaque fragment est coupé (marque `mark()` du scénario, repli
   par détection d'écran blanc) : le panneau remplace l'écran d'attente.
 
@@ -78,6 +117,13 @@ blanche à liseré sombre, déplacée par les vrais événements souris, avec un
 bleue à chaque clic. Les gestes sont humanisés (courbes de Bézier, frappes
 ralenties, drags en quelques pas pour ne pas surcharger le rendu des cartes).
 
+- **Caché tant que la souris n'a pas bougé** : pas de flèche dans le coin haut
+  gauche à l'ouverture d'une page, ni pendant un schéma animé sans interaction.
+- **Replacé après une navigation** à sa dernière position (celle de la souris
+  Playwright), au lieu de repartir du coin.
+- **Effacé après 3 s d'immobilité**, réaffiché au mouvement suivant : un curseur
+  garé sur le contenu pendant une longue scène gêne la lecture. Pour pointer
+  durablement un élément, le désigner par un sous-titre ou bouger légèrement.
 - **Sur un carton (intro ou fin), le curseur est masqué** via la classe
   `demo-cover` posée sur `<html>` : un curseur qui flotte au-dessus d'un écran
   de titre n'a aucun sens. Ne pas le réafficher pendant un carton.
@@ -85,27 +131,44 @@ ralenties, drags en quelques pas pour ne pas surcharger le rendu des cartes).
   trajectoires, utile pour les formats courts.
 - `installCursor` masque aussi le curseur système (`cursor: none !important`).
 
+## Polices
+
+Le tournage relève toutes les 3 s les pages (et iframes) dont le texte s'affiche
+dans une police de repli : police en erreur dans `document.fonts`, ou corps de
+page resté en « Times New Roman » (feuille de thème non chargée, aperçu de page
+de portail par exemple). Chaque cas est journalisé (`⚠ police …`) et récapitulé
+en fin de tournage : relire ces passages, et refaire la prise si le défaut est à
+l'écran.
+
 ## Sous-titres
 
 Deux mécanismes, selon le format :
 
 - **mode voix / muet** : `mux` génère un `.srt` et une variante incrustée
-  `.st.mp4` (`--burn`). Les cues font **2 lignes maximum**, ~40 caractères par
-  ligne, coupées de préférence à une fin de phrase ; en voix elles sont calées
-  mot à mot, en muet ancrées sur la durée réelle de la scène (~13 caractères/s,
-  minimum 1,2 s).
+  `.st.mp4` (`--burn`, Nunito SemiBold sur bandeau `#424242`). Les cues font
+  **2 lignes maximum**, ~40 caractères par ligne, coupées de préférence à une
+  fin de phrase ; en voix elles sont calées mot à mot, en muet ancrées sur la
+  durée réelle de la scène (~13 caractères/s, minimum 1,2 s).
 - **format court** : sous-titres incrustés au fil du scénario via
-  `setCaption(page, text)` (fond `#424242` translucide, bas centre). Décaler la
+  `setCaption(page, text)` ou `say(page, text, actions)` (bas centre). Décaler la
   zone avec `--caption-right 420` quand un panneau latéral occupe la droite
-  (application carto).
+  (application carto). Sur un schéma à fond clair, `export const caption =
+  { style: 'plain' }` dans le scénario remplace le bandeau par un texte foncé.
 
 Le texte affiché est celui de `script.md` ; les corrections de prononciation ne
 s'appliquent qu'à la synthèse (`pronunciations`), jamais au SRT.
 
 ## Formats d'enregistrement
 
-- **1920×1080** : cours et démos d'atelier (projection, plein écran).
-- **1280×720** : formats courts — plus petit format qui conserve la disposition
-  desktop (panneau latéral visible) et reste lisible dans un fil social.
+La vidéo est capturée en pixels CSS : la taille de la fenêtre est la définition
+de la vidéo **et** fixe la taille de l'interface à l'écran. Chrome headless ne
+capture pas en haute densité (`deviceScaleFactor` sans effet sur le
+screencast) : pas de 4K du produit.
+
+- **1280×720** : formats courts, pages Fonctionnalités, boucles de stand —
+  interface lisible à distance, disposition desktop conservée (au-dessus du
+  seuil `lg` de Vuetify, 1145 px).
+- **1920×1080** : cours et démos d'atelier projetés en plein écran ; l'interface
+  y paraît plus petite, à éviter pour un écran regardé à 2-3 m.
 - `deviceScaleFactor: 1`, locale `fr-FR`, timezone `Europe/Paris` : ne pas
   modifier, les vidéos sont produites en français.

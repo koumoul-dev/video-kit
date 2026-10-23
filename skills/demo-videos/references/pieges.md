@@ -39,8 +39,15 @@ Retours d'expérience des tournages `pilotage`, `documentation` et
   et le montage ne peut pas compresser.
 - **La sortie ne doit pas aller dans `tests/output`** : Playwright vide ce dossier
   à chaque lancement de tests. Le kit écrit dans `<videos-dir>/<slug>/out/`.
-- **Ne pas supprimer le flash blanc de l'intro** en mode à beats : c'est le
-  repère de calage du t=0 au montage.
+- **Ne pas supprimer le flash blanc de l'intro** en mode à beats : le calage
+  est exact (horodatage des images), mais le flash reste le repère des anciens
+  bruts WebM.
+- **Avertissements de police en fin de tournage** (`⚠ police …`) : la page
+  concernée s'affiche dans une police de repli (souvent un aperçu de page de
+  portail ou une iframe dont la feuille de thème n'a pas chargé). Relire le
+  passage et refaire la prise plutôt que de diffuser.
+- **Site de fin dans `subtitle`** : le site va dans `site` (sous le logo, comme
+  sur l'intro) ; s'il est omis, la carte de fin reprend celui de l'intro.
 - **Formulaire ou aperçu non rafraîchi** après une action : attendre la réponse
   réseau ou un polling court avec plafond, plutôt qu'un `sleep` long (le temps
   mort se voit à l'écran).

@@ -30,6 +30,9 @@ export interface Timeline {
   width?: number
   height?: number
   originWall: number
+  // horodatage mural (ms) de la première image de la vidéo brute : calage
+  // exact du montage, sans détection de scène (absent des anciennes timelines)
+  videoStartWall?: number
   cardT0: number
   endWall: number
   beats: TimelineBeat[]

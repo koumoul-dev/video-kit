@@ -25,7 +25,7 @@ qu'après un temps d'inactivité : le kit réessaie toutes les 15 s (12 tentativ
 | Option | Effet |
 | --- | --- |
 | `--state <fichier>` | cookies de session explicites (storage state Playwright) |
-| `--no-state` | aucun cookie : le proxy injecte côté serveur, mais le SPA reste anonyme |
+| `--no-state` | aucun cookie et aucune récolte de session NHI : chargement anonyme (implicite pour une page locale `file://`, schémas animés) |
 | `--profile` | profil persistant le plus récent du navigateur MCP (fermer le navigateur MCP avant : profil verrouillé) |
 | `auth:import <fichier>` | convertit un storage state récolté depuis le navigateur MCP (`playwright_browser_run_code_unsafe`) en `<videos-dir>/.auth/state.json` |
 

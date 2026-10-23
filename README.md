@@ -12,7 +12,7 @@ et un `scenario.ts` (actions Playwright, une fonction par scène) :
 ├── script.md        # front matter + beats (narration « > » + mise en scène)
 ├── scenario.ts      # actions Playwright
 ├── assets/          # fichiers de démonstration
-└── out/             # WebM, timeline, MP4, SRT (gitignoré)
+└── out/             # vidéo brute, timeline, MP4, SRT (gitignoré)
 ```
 
 ## Installation
@@ -23,7 +23,13 @@ npm i -D @koumoul/video-kit @playwright/test
 python3 -m venv .venv && .venv/bin/pip install edge-tts kokoro soundfile
 ```
 
-Prérequis : Node ≥ 22.18, `ffmpeg` et `ffprobe`, Google Chrome.
+Prérequis : Node ≥ 22.18, `@playwright/test` ≥ 1.59, `ffmpeg` et `ffprobe`
+(libass pour `--burn`), Google Chrome.
+
+La vidéo est capturée image par image (screencast Playwright horodaté, encodé
+en H.264 quasi sans perte) puis montée en H.264 `-crf 18` : pas de
+`recordVideo`, dont l'encodage VP8 à 1 Mbit/s dégradait le texte et les
+mouvements. L'horodatage des images donne un calage exact du montage.
 
 ## Commandes
 
@@ -64,7 +70,7 @@ luminance au montage.
 import {
   clickLocator, clickHuman, dragHuman, typeHuman, replaceTextHuman,
   fillLocatorHuman, setTimeScale, sleep,
-  setCaption, hideIntro, showOutro,
+  setCaption, say, hideIntro, showOutro,
   type ScenarioContext
 } from '@koumoul/video-kit'
 
@@ -99,8 +105,10 @@ npm run typecheck
 npm run quality     # lint + typecheck + tests
 ```
 
-`assets/charte/` embarque la police Nunito (OFL) et le logo Koumoul blanc ;
-`assets/synth_*.py` portent la synthèse vocale.
+`assets/charte/` embarque la police Nunito (OFL, woff2 pour les cartons, TTF
+pour l'incrustation libass) et le logo officiel Koumoul blanc en SVG (dépôt
+`communication`, `logos/svg/logo-slogan-white.svg`) ; `assets/synth_*.py` portent
+la synthèse vocale. Les couleurs sont celles du thème par défaut de data-fair.
 
 ## Licence
 

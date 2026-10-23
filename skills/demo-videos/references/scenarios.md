@@ -46,7 +46,7 @@ le nombre de mots (~2,6 mots/s, minimum 1,8 s) ; en voix, elle suit l'audio rée
 import {
   clickHuman, clickLocator, dragHuman, fillLocatorHuman, replaceTextHuman,
   setTimeScale, sleep, typeHuman,
-  setCaption, hideIntro, showOutro,
+  setCaption, say, hideIntro, showOutro,
   type ScenarioContext
 } from '@koumoul/video-kit'
 
@@ -99,7 +99,17 @@ Le contexte expose `page`, `beat`, `idle`, `log`, `video`, `videosDir`.
   beat 1 (`hideIntro`) ; le scénario affiche la carte de fin (`showOutro`).
 - En format court (sans `script.md`), le scénario exporte `intro`, appelle
   `hideIntro(page)` quand l'application est prête, `setCaption(page, '…')` /
-  `setCaption(page, null)` et `showOutro(page, { site: 'datafair.cloud' })`.
+  `setCaption(page, null)` et `showOutro(page, { title: '…' })`.
+- `say(page, texte, actions?, { cps, minHold })` pose un sous-titre, joue les
+  actions pendant qu'il est affiché, puis le tient jusqu'à son temps de lecture
+  (12 caractères/s, 2,2 s minimum par défaut) : les animations ne sont jamais
+  coupées. À préférer à un `say()` recopié dans chaque scénario.
+- `export const caption = { style: 'plain' }` (format court) : sous-titres en
+  texte foncé sans bandeau, pour un schéma sur fond clair ; `right` décale la
+  zone comme `--caption-right`.
+- **Carte de fin = même gabarit que l'intro** : une phrase d'appel en `title`,
+  éventuellement un `subtitle` ; le site va dans `site` (sous le logo) et, s'il
+  est omis, reprend celui de l'intro (`carton_site` ou `intro.site`).
 - Ne pas utiliser `page.goto` après `hideIntro` quand `intro` est exportée : la
   carte ne doit pas réapparaître. En mode à beats, naviguer pendant le carton
   (beat 0) perdrait le repère de calage.

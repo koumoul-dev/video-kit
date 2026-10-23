@@ -31,11 +31,9 @@ Adapter `--videos-dir` (`videos` par défaut) et le preset (`voix`, `muet`,
 ```gitignore
 # artefacts d'enregistrement (audio, timeline, MP4, SRT) et sessions navigateur
 <videos-dir>/**/out/
-<videos-dir>/**/raw/
 <videos-dir>/.auth/
 
 # format court à la racine du dossier vidéos
-<videos-dir>/*.webm
 <videos-dir>/*.mp4
 ```
 

@@ -49,7 +49,7 @@ garde la disposition desktop et reste lisible dans un fil).
     ├── script.md             # source de vérité : front matter + beats
     ├── scenario.ts           # actions Playwright, une fonction par beat
     ├── assets/               # fichiers de démo (CSV…), gitignorés si volumineux
-    └── out/                  # artefacts générés (WebM, timeline, MP4, SRT) : gitignoré
+    └── out/                  # artefacts générés (vidéo brute, timeline, MP4, SRT) : gitignoré
 ```
 
 `out/` et `.auth/` ne sont **jamais commités** ; les MP4 finaux restent dans
@@ -86,13 +86,20 @@ les assets légers sont versionnés.
 Elles sont détaillées dans [references/charte.md](references/charte.md) ;
 l'essentiel :
 
-- **Cartons** à la charte Koumoul / Data Fair : dégradé `#0A2F5E → #1976D2`,
-  trait d'accent `#81D4FA` sous le badge, police Nunito embarquée, logo Koumoul
-  blanc, aucun asset réseau (complet dès la première frame). L'intro est opaque,
-  affichée ≥ 2,6 s et sert de repère de calage au montage.
-- **Pas de curseur factice sur les cartons** de début / fin : l'overlay pose
-  `demo-cover` sur `<html>`, le curseur disparaît (il n'a de sens que sur
-  l'interface). Jamais de curseur système à l'écran.
+- **Cartons** à la charte Koumoul / Data Fair, couleurs du thème data-fair :
+  dégradé `#0D47A1 → #1976D2`, trait d'accent `#81D4FA` sous le badge, police
+  Nunito embarquée, logo officiel Koumoul blanc en SVG, aucun asset réseau
+  (complet dès la première frame). **Un seul gabarit** pour l'intro, la fin et
+  les panneaux : logo et site toujours en bas, au même endroit ; la fin reprend
+  le site de l'intro. L'intro est opaque et affichée ≥ 2,6 s.
+- **Curseur factice** : caché sur les cartons, caché tant que la souris n'a pas
+  bougé, replacé après une navigation, effacé après 3 s d'immobilité. Jamais de
+  curseur système à l'écran.
+- **Polices** : le tournage signale les pages affichées dans une police de
+  repli (`⚠ police …`) ; refaire la prise plutôt que de diffuser.
+- **Qualité** : capture image par image horodatée (pas `recordVideo`, encodé à
+  1 Mbit/s), montage H.264 `-crf 18` ; la fenêtre fixe la définition et la
+  taille de l'interface (1280×720 pour être lu de loin).
 - **Sous-titres** : 2 lignes maximum, ~40 caractères par ligne, coupures à la
   ponctuation, incrustés (autoplay sans son), SRT conservé pour la version voix.
   En habillage `panneaux`, les citations ne deviennent pas des sous-titres : elles

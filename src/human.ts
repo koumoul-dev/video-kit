@@ -9,7 +9,10 @@
 //
 // Tant qu'un carton de l'overlay recouvre l'appli (intro ou fin), la classe
 // `demo-cover` posée sur <html> masque le curseur : il n'a de sens que sur
-// l'interface.
+// l'interface. Il reste aussi caché tant que la souris n'a pas bougé (sinon il
+// apparaissait dans le coin haut gauche à chaque nouvelle page, et pendant
+// tout un schéma animé sans interaction), retrouve sa position après une
+// navigation, et s'efface après quelques secondes d'immobilité.
 
 import type { BrowserContext, Locator, Page } from '@playwright/test'
 
@@ -36,7 +39,8 @@ export async function installCursor (context: BrowserContext) {
       // (contrairement à un <style> inline ou à l'attribut style).
       const sheet = new CSSStyleSheet()
       sheet.replaceSync(`
-        #__demo-cursor { position: fixed; left: 0; top: 0; z-index: 2147483647; pointer-events: none; will-change: transform; opacity: 1; transition: opacity .25s ease; }
+        #__demo-cursor { position: fixed; left: 0; top: 0; z-index: 2147483647; pointer-events: none; will-change: transform; opacity: 0; transition: opacity .25s ease; }
+        #__demo-cursor.demo-active { opacity: 1; }
         #__demo-cursor svg { display: block; transition: transform .08s ease-out; filter: drop-shadow(0 1px 2px rgba(0,0,0,.4)); }
         #__demo-cursor.pressed svg { transform: scale(.82); }
         .demo-ripple { position: fixed; width: 18px; height: 18px; margin: -9px 0 0 -9px; border: 2px solid rgba(25, 118, 210, .95); border-radius: 50%; pointer-events: none; z-index: 2147483646; }
@@ -50,9 +54,22 @@ export async function installCursor (context: BrowserContext) {
       cursor.id = '__demo-cursor'
       cursor.innerHTML = '<svg width="25" height="25" viewBox="0 0 25 25"><path d="M3 1.5 L3 19.5 L8 14.9 L10.9 21.5 L14.2 20 L11.4 13.6 L18 13.6 Z" fill="#ffffff" stroke="#1a1a1a" stroke-width="1.4" stroke-linejoin="round"/></svg>'
       document.body.appendChild(cursor)
+      // immobile depuis 3 s : le curseur s'efface (un curseur garé sur le
+      // contenu pendant une longue scène gêne la lecture), et revient au
+      // prochain mouvement
+      const IDLE_HIDE_MS = 3000
+      let idleTimer: ReturnType<typeof setTimeout> | undefined
       const place = (x: number, y: number) => {
         cursor.style.transform = `translate3d(${x}px, ${y}px, 0)`
+        cursor.classList.add('demo-active')
+        clearTimeout(idleTimer)
+        idleTimer = setTimeout(() => cursor.classList.remove('demo-active'), IDLE_HIDE_MS)
+        sessionStorage.setItem('__demo-cursor', `${x},${y}`)
       }
+      // après une navigation, la souris de Playwright est toujours au même
+      // endroit : on y replace le curseur
+      const saved = sessionStorage.getItem('__demo-cursor')?.split(',').map(Number)
+      if (saved?.length === 2 && saved.every(Number.isFinite)) place(saved[0], saved[1])
       window.addEventListener('mousemove', (e) => place(e.clientX, e.clientY), true)
       window.addEventListener('mousedown', (e) => {
         place(e.clientX, e.clientY)
