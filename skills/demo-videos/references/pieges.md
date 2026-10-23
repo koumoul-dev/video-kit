@@ -52,6 +52,14 @@ Retours d'expérience des tournages `pilotage`, `documentation` et
   (ex. 3,5 s pour la mise à jour des tuiles) donnent un rythme lisible ; ne pas
   attendre une finalisation distante qui dépasse la durée de la vidéo.
 
+## Composants Vuetify
+
+Les clics scriptés qui échouent sur les interfaces de la plateforme (champ de
+sélection recouvert, menu téléporté, interrupteur dont le libellé n'est pas
+cliquable, transition de stepper, contenu d'un `d-frame`) sont décrits une fois
+pour tous les scripts dans le skill `data-fair-browse`
+(`references/vuetify.md`), installé avec `npx skills add data-fair/lib`.
+
 ## Habillage et CSP
 
 - Data Fair applique une CSP stricte. Le contexte d'enregistrement est lancé
