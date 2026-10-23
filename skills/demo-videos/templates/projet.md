@@ -17,8 +17,7 @@ python3 -m venv .venv && .venv/bin/pip install edge-tts kokoro soundfile
     "video:mux": "koumoul-video mux --videos-dir produits/videos",
     "video:clean": "koumoul-video clean --videos-dir produits/videos",
     "tts": "koumoul-video tts --video import-fichier",
-    "tts:bakeoff": "koumoul-video tts --video import-fichier --bakeoff",
-    "auth:import": "koumoul-video auth:import"
+    "tts:bakeoff": "koumoul-video tts --video import-fichier --bakeoff"
   }
 }
 ```
@@ -29,13 +28,10 @@ Adapter `--videos-dir` (`videos` par défaut) et le preset (`voix`, `muet`,
 ## `.gitignore`
 
 ```gitignore
-# artefacts d'enregistrement (audio, timeline, MP4, SRT) et sessions navigateur
+# artefacts d'enregistrement (vidéo brute, audio, timeline, MP4, SRT)
 <videos-dir>/**/out/
-<videos-dir>/**/raw/
-<videos-dir>/.auth/
 
 # format court à la racine du dossier vidéos
-<videos-dir>/*.webm
 <videos-dir>/*.mp4
 ```
 
@@ -46,7 +42,6 @@ ne pas l'ignorer en bloc : n'ignorer que les artefacts ci-dessus.
 
 ```
 <videos-dir>/
-├── .auth/                    # session NHI (gitignoré)
 ├── <slug-1>/
 │   ├── script.md
 │   ├── scenario.ts
@@ -58,7 +53,6 @@ ne pas l'ignorer en bloc : n'ignorer que les artefacts ci-dessus.
 
 ## README du dépôt
 
-Documenter : le format retenu, les commandes (`record`, `mux`, `clean`), la
-gestuelle de tournage (fermer le navigateur MCP, attendre ~2 min avant le
-proxy NHI), la politique de sortie (`out/` jamais commité, MP4 copiés hors du
+Documenter : le format retenu, les commandes (`record`, `mux`, `clean`), le
+profil nhi-proxy à lancer avant le tournage, la politique de sortie (`out/` jamais commité, MP4 copiés hors du
 dépôt) et les données de démonstration à nettoyer.

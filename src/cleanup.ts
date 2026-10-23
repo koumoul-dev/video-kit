@@ -1,27 +1,23 @@
 // Supprime le jeu de données (et l'application éventuelle) de démonstration
-// créés pendant un tournage.
-//
-// Utilise les cookies de `<videos-dir>/.auth/state.json`.
+// créés pendant un tournage, avec la session du proxy NHI (voir auth.ts).
 
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { chromium } from '@playwright/test'
-import { ensureProxyAuth, mcpLaunchOptions } from './auth.ts'
+import { proxyServer } from './auth.ts'
 
 export interface CleanupOptions {
   videosDir: string
   video?: string
   id?: string
-  state?: string
+  // back-office data-fair du tournage (défaut : https://koumoul.com/data-fair/)
+  url?: string
   log?: (message: string) => void
 }
 
 export async function cleanup (opts: CleanupOptions) {
   const log = opts.log ?? console.log
   const video = opts.video ?? 'import-fichier'
-  const stateFile = opts.state ?? resolve(opts.videosDir, '.auth/state.json')
-  if (!existsSync(stateFile)) await ensureProxyAuth(stateFile, { log })
-  const state = JSON.parse(readFileSync(stateFile, 'utf8')) as { cookies: any[], origins: any[] }
 
   let ids: string[] = []
   if (opts.id) {
@@ -43,11 +39,12 @@ export async function cleanup (opts: CleanupOptions) {
     if (existsSync(appFile)) appId = (JSON.parse(readFileSync(appFile, 'utf8')) as { id: string }).id
   }
 
-  const launchOptions = mcpLaunchOptions()
-  const browser = await chromium.launch({ channel: 'chrome', headless: true, proxy: launchOptions.proxy, args: launchOptions.args })
-  const context = await browser.newContext({ storageState: state })
+  const proxy = proxyServer()
+  if (!proxy) throw new Error('Aucun proxy NHI configuré : suppression impossible sans session (voir auth.md).')
+  const browser = await chromium.launch({ channel: 'chrome', headless: true, proxy: { server: proxy } })
+  const context = await browser.newContext({ ignoreHTTPSErrors: true })
   const page = await context.newPage()
-  await page.goto('https://koumoul.com/data-fair/', { waitUntil: 'domcontentloaded', timeout: 60_000 })
+  await page.goto(opts.url ?? 'https://koumoul.com/data-fair/', { waitUntil: 'domcontentloaded', timeout: 60_000 })
 
   for (const id of ids) {
     const result = await page.evaluate(async (datasetId) => {

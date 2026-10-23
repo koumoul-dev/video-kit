@@ -9,7 +9,7 @@
 // beats deviennent des panneaux, les beats sans citation des fragments.
 
 import { chromium } from '@playwright/test'
-import { habillageCss, loadOverlayAssets, type OverlayAssets } from './overlay.ts'
+import { cardHtml, habillageCss, loadOverlayAssets, type OverlayAssets } from './overlay.ts'
 import { MUET_WORDS_PER_SECOND } from './tts.ts'
 
 // durée plancher d'un panneau : le temps de repérer le chapitre dans une boucle
@@ -38,47 +38,34 @@ export function panelBadge (label: string | undefined, index: number, total: num
   return `${String(index + 1).padStart(2, '0')} / ${String(total).padStart(2, '0')}`
 }
 
-function escapeHtml (value: string | undefined): string {
-  return (value ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-}
-
 // Document autonome : police, logo et styles embarqués, aucun asset réseau.
+// Même gabarit que les cartons d'intro et de fin (`cardHtml`), sans animation.
 // Exporté pour les tests (rendu déterministe, sans navigateur).
 export function panelHtml (panel: PanelSpec, assets: OverlayAssets): string {
-  const logo = assets.logo ? `<img class="demo-logo" alt="Koumoul" src="${assets.logo}">` : ''
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><style>
     html, body { margin: 0; height: 100%; }
     ${habillageCss(assets.fontsCss)}
-    #__demo-overlay .demo-title, #__demo-overlay .demo-subtitle { transition: none; }
+    #__demo-overlay .demo-title, #__demo-overlay .demo-subtitle { opacity: 1; transform: none; transition: none; }
   </style></head><body>
     <div id="__demo-overlay">
-      <div class="demo-card">
-        <div class="demo-badge">${escapeHtml(panel.badge)}</div>
-        <div class="demo-accent"></div>
-        <h1 class="demo-title demo-in">${escapeHtml(panel.title)}</h1>
-        <p class="demo-subtitle demo-in">${escapeHtml(panel.text)}</p>
-        <div class="demo-footer">${escapeHtml(panel.footer)}</div>
-        <div class="demo-site">${escapeHtml(panel.site)}</div>
-        ${logo}
-      </div>
+      ${cardHtml({ badge: panel.badge, title: panel.title, subtitle: panel.text, footer: panel.footer, site: panel.site }, 'id="__demo-panel"', assets.logo)}
     </div>
   </body></html>`
 }
 
-// Rend le panneau en PNG à la taille de la vidéo. Chromium headless est déjà une
+// Rend le panneau en PNG à la taille de la vidéo : mise en page de la fenêtre
+// (`size`, pixels CSS), densité `scale`. Chromium headless est déjà une
 // dépendance du kit (`@playwright/test`) : mêmes polices et mêmes couleurs que
 // les cartons, sans outil de rendu supplémentaire.
-export async function renderPanelPng (panel: PanelSpec, size: { width: number, height: number }, outPng: string): Promise<void> {
+export async function renderPanelPng (panel: PanelSpec, size: { width: number, height: number }, outPng: string, scale = 1): Promise<void> {
   const assets = loadOverlayAssets()
   const browser = await chromium.launch({ args: ['--force-color-profile=srgb'] })
   try {
-    const page = await browser.newPage({ viewport: size, deviceScaleFactor: 1 })
+    const page = await browser.newPage({ viewport: size, deviceScaleFactor: scale })
     await page.setContent(panelHtml(panel, assets), { waitUntil: 'load' })
-    await page.evaluate(() => document.fonts.ready.then(() => undefined))
+    // charge explicitement chaque graisse : `document.fonts.ready` peut se
+    // résoudre avant que la mise en page ait réclamé la police (rendu en repli)
+    await page.evaluate(() => Promise.all([...document.fonts].map(font => font.load())).then(() => undefined))
     await page.screenshot({ path: outPng })
   } finally {
     await browser.close()

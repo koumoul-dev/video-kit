@@ -33,28 +33,30 @@ function usage () {
 
 Commandes :
   record --video <slug>     tourne la vidéo (scénario, cartons, curseur, narration)
-  mux --video <slug>        assemble le MP4 et le SRT depuis le WebM
+  mux --video <slug>        assemble le MP4 et le SRT depuis la vidéo brute
   clean --video <slug>      supprime le jeu de données / l'application de démo
   tts --video <slug>        synthétise la narration, ou compare des voix
-  auth:import <fichier>     importe des cookies de session dans <videos-dir>/.auth
 
 Options record :
   --preset <voix|muet|social>  format (taille par défaut : 1920x1080, 1280x720)
   --video <slug>               dossier <videos-dir>/<slug> (script.md, scenario.ts)
   --size <LxH>                 taille de la fenêtre (surcharge le preset)
+  --scale <n>                  densité de pixels : vidéo de LxH × n (1,5 → 1080p
+                               depuis 1280x720, 3 → 4K), mise en page inchangée
   --headed                     navigateur visible (mise au point)
   --url <url>                  page ouverte avant le scénario
   --mux                        enchaîne le montage MP4/SRT
   --burn                       avec --mux : variante sous-titrée .st.mp4
   --no-tts                     réutilise la narration déjà synthétisée
-  --state <fichier>            cookies de session explicites
-  --no-state                   aucun cookie (chargement anonyme)
-  --profile                    profil persistant du navigateur MCP
+  --state <fichier>            cookies de session explicites (en plus du proxy NHI)
   --caption-right <px>         décale les sous-titres incrustés (panneau à droite)
 
 Options mux :
-  --offset <secondes>          force l'offset au lieu de détecter le carton
   --burn                       produit aussi la variante sous-titrée
+
+Options clean :
+  --id <identifiant>           jeu de données à supprimer (sinon celui du tournage)
+  --url <url>                  back-office du tournage (défaut : https://koumoul.com/data-fair/)
 
 Options tts :
   --force                      resynthétise tout
@@ -62,7 +64,11 @@ Options tts :
   --bakeoff-prononciation      extraits comparatifs de graphies
 
 Options communes :
-  --videos-dir <dossier>       dossier des vidéos (défaut : videos)`)
+  --videos-dir <dossier>       dossier des vidéos (défaut : videos)
+
+Proxy NHI : NHI_PROXY_SERVER, sinon navigateur MCP d'opencode, sinon profil
+nhi-proxy (NHI_PROXY_PROFILE, défaut : celui de https://koumoul.com) ;
+RECORD_NO_PROXY=1 pour un chargement anonyme.`)
 }
 
 function requireVideo (): string {
@@ -91,14 +97,12 @@ async function main () {
       video,
       videosDir: VIDEOS_DIR,
       size,
+      scale: arg('scale') !== undefined ? Number(arg('scale')) : undefined,
       headed: flag('headed'),
       mux: flag('mux'),
       burn: flag('burn'),
-      offset: arg('offset') !== undefined ? Number(arg('offset')) : undefined,
       noTts: flag('no-tts'),
       state: arg('state'),
-      noState: flag('no-state'),
-      profile: flag('profile'),
       url: arg('url'),
       captionRight: arg('caption-right') !== undefined ? Number(arg('caption-right')) : undefined
     })
@@ -108,17 +112,14 @@ async function main () {
   if (command === 'mux') {
     const video = requireVideo()
     const { mux } = await import('./mux.ts')
-    await mux(video, VIDEOS_DIR, {
-      offset: arg('offset') !== undefined ? Number(arg('offset')) : undefined,
-      burn: flag('burn')
-    })
+    await mux(video, VIDEOS_DIR, { burn: flag('burn') })
     return
   }
 
   if (command === 'clean') {
     const video = requireVideo()
     const { cleanup } = await import('./cleanup.ts')
-    await cleanup({ videosDir: VIDEOS_DIR, video, id: arg('id'), state: arg('state') })
+    await cleanup({ videosDir: VIDEOS_DIR, video, id: arg('id'), url: arg('url') })
     return
   }
 
@@ -134,13 +135,6 @@ async function main () {
     } else {
       prepareNarration(parseScript(scriptPath), { force: flag('force') })
     }
-    return
-  }
-
-  if (command === 'auth:import') {
-    const input = rawArgs[1]
-    const { importAuth } = await import('./import-auth.ts')
-    importAuth(input, VIDEOS_DIR)
     return
   }
 

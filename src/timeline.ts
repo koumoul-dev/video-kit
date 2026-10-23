@@ -27,11 +27,15 @@ export interface TimelineIdle {
 
 export interface Timeline {
   video: string
-  width?: number
-  height?: number
+  // fenêtre en pixels CSS ; la vidéo brute fait `width × scale`
+  width: number
+  height: number
+  scale?: number
   originWall: number
+  // horodatage mural (ms) de la première image de la vidéo brute : calage
+  // exact du montage, sans détection de scène
+  videoStartWall: number
   cardT0: number
-  endWall: number
   beats: TimelineBeat[]
   idles: TimelineIdle[]
 }

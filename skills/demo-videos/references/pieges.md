@@ -39,8 +39,12 @@ Retours d'expérience des tournages `pilotage`, `documentation` et
   et le montage ne peut pas compresser.
 - **La sortie ne doit pas aller dans `tests/output`** : Playwright vide ce dossier
   à chaque lancement de tests. Le kit écrit dans `<videos-dir>/<slug>/out/`.
-- **Ne pas supprimer le flash blanc de l'intro** en mode à beats : c'est le
-  repère de calage du t=0 au montage.
+- **Avertissements de police en fin de tournage** (`⚠ police …`) : la page
+  concernée s'affiche dans une police de repli (souvent un aperçu de page de
+  portail ou une iframe dont la feuille de thème n'a pas chargé). Relire le
+  passage et refaire la prise plutôt que de diffuser.
+- **Site de fin dans `subtitle`** : le site va dans `site` (sous le logo, comme
+  sur l'intro) ; s'il est omis, la carte de fin reprend celui de l'intro.
 - **Formulaire ou aperçu non rafraîchi** après une action : attendre la réponse
   réseau ou un polling court avec plafond, plutôt qu'un `sleep` long (le temps
   mort se voit à l'écran).
@@ -48,10 +52,21 @@ Retours d'expérience des tournages `pilotage`, `documentation` et
   (ex. 3,5 s pour la mise à jour des tuiles) donnent un rythme lisible ; ne pas
   attendre une finalisation distante qui dépasse la durée de la vidéo.
 
+## Composants Vuetify
+
+Les clics scriptés qui échouent sur les interfaces de la plateforme (champ de
+sélection recouvert, menu téléporté, interrupteur dont le libellé n'est pas
+cliquable, transition de stepper, contenu d'un `d-frame`) sont décrits une fois
+pour tous les scripts dans le skill `data-fair-browse`
+(`references/vuetify.md`), installé avec `npx skills add data-fair/lib`.
+
 ## Habillage et CSP
 
-- Data Fair applique une CSP `style-src` stricte : le kit utilise des **feuilles
-  de style constructibles** (`document.adoptedStyleSheets`), pas de `<style>` ni
+- Data Fair applique une CSP stricte. Le contexte d'enregistrement est lancé
+  avec `bypassCSP` : sans lui, `font-src` bloque la Nunito embarquée en `data:`
+  et les cartons posés sur le produit s'affichent dans une police de repli
+  (c'était le cas des vidéos tournées avant). Le kit garde des **feuilles de
+  style constructibles** (`document.adoptedStyleSheets`), pas de `<style>` ni
   d'attribut `style` pour les règles. Ne pas casser ce mécanisme en ajoutant du
   CSS inline dynamique.
 - Les cartons embarquent police et logo en base64 : le contenu de la première
@@ -63,7 +78,7 @@ Retours d'expérience des tournages `pilotage`, `documentation` et
   Inspecter la vidéo avant diffusion.
 - **Nettoyer la démo distante** après tournage (`clean`), y compris en cas
   d'échec partiel (`--id`).
-- **Ne jamais committer** `out/`, `.auth/`, les MP4, les CSV volumineux : ils
+- **Ne jamais committer** `out/`, les MP4, les CSV volumineux : ils
   restent locaux et se copient hors du dépôt pour diffusion.
 
 ## Environnement

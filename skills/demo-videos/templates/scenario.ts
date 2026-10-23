@@ -31,6 +31,7 @@ export default async ({ page, beat, idle, log }: ScenarioContext) => {
   // … un beat par scène de script.md, dans l'ordre …
 
   await beat('beat-02', async () => {
-    await showOutro(page, { title: 'Titre de la vidéo', subtitle: 'Data Fair — démonstration', site: 'koumoul.com' })
+    // site repris de `carton_site` s'il est omis
+    await showOutro(page, { title: 'Titre de la vidéo', subtitle: 'Data Fair — démonstration' })
   })
 }

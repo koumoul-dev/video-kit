@@ -9,22 +9,51 @@
 //    sous-titres incrustés via `setCaption`, carte de fin) ; `mux.ts` coupe le
 //    préambule de chargement par analyse de luminance.
 //
-// L'authentification se fait par le proxy NHI (session de test) : voir auth.ts
-// et `skills/demo-videos/references/auth.md`.
+// L'authentification se fait par le proxy NHI : Chromium est lancé derrière le
+// proxy et reçoit la session en cookies (voir auth.ts et
+// `skills/demo-videos/references/auth.md`).
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { chromium, type BrowserContext, type Page } from '@playwright/test'
-import { ensureProxyAuth, mcpLaunchOptions } from './auth.ts'
+import { chromium, type Page } from '@playwright/test'
+import { proxyServer } from './auth.ts'
+import { startCapture } from './capture.ts'
 import { installCursor, sleep } from './human.ts'
-import { hideIntro, installOverlay, loadOverlayAssets, showIntro, type OverlayCard } from './overlay.ts'
+import { hideIntro, installOverlay, loadOverlayAssets, showIntro, type OverlayCard, type OverlayOptions } from './overlay.ts'
 import { parseScript, type Script } from './script.ts'
 import { prepareNarration, type NarratedBeat } from './tts.ts'
 import { IDLE_FACTOR, type Timeline, type TimelineBeat, type TimelineIdle } from './timeline.ts'
 
 const GAP_AFTER_NARRATION = 0.7
+
+// Pages dont le texte s'affiche dans une police de repli : police en erreur
+// (`document.fonts`) ou corps de page resté dans la police par défaut du
+// navigateur (feuille de thème non chargée). Les iframes vides ou masquées
+// (tiroir de l'assistant fermé…) sont ignorées : seul ce qui est filmé compte.
+async function fontIssues (page: Page): Promise<string[]> {
+  const issues: string[] = []
+  for (const frame of page.frames()) {
+    if (frame !== page.mainFrame()) {
+      // un tiroir fermé reste « visible » au sens de Playwright, mais hors de
+      // la fenêtre : on vérifie que l'iframe recoupe ce qui est filmé
+      const box = await frame.frameElement().then(element => element.boundingBox()).catch(() => null)
+      const viewport = page.viewportSize()
+      if (!box || !viewport || box.width < 2 || box.height < 2 ||
+        box.x + box.width <= 0 || box.y + box.height <= 0 || box.x >= viewport.width || box.y >= viewport.height) continue
+    }
+    const found = await frame.evaluate(() => {
+      if (!document.body || !document.body.innerText.trim()) return undefined
+      const failed = [...document.fonts].filter(font => font.status === 'error').map(font => font.family.replaceAll('"', ''))
+      return { failed: [...new Set(failed)], family: getComputedStyle(document.body).fontFamily }
+    }).catch(() => undefined)
+    if (!found) continue
+    const where = frame.url().slice(0, 120)
+    if (found.failed.length) issues.push(`police non chargée (${found.failed.join(', ')}) — ${where}`)
+    if (/^\s*("?Times New Roman"?|serif)\s*(,|$)/i.test(found.family)) issues.push(`texte en police par défaut du navigateur (${found.family}) — ${where}`)
+  }
+  return issues
+}
 
 export interface BeatRunner {
   (id: string, actions: (page: Page) => Promise<void>): Promise<void>
@@ -52,32 +81,21 @@ export interface ScenarioContext {
 export interface RecordOptions {
   video: string
   videosDir: string
+  // taille de la fenêtre en pixels CSS : fixe la mise en page (breakpoints)
   size?: string
+  // densité de pixels : la vidéo fait `size × scale` (1280x720 × 1,5 = 1080p,
+  // × 3 = 4K) avec la mise en page de `size`, texte plus net
+  scale?: number
   headed?: boolean
   mux?: boolean
   burn?: boolean
-  offset?: number
   noTts?: boolean
+  // cookies de session explicites (storage state Playwright), en plus du proxy
   state?: string
-  noState?: boolean
-  profile?: boolean
   url?: string
   // décale les sous-titres incrustés du format court (panneau latéral à droite)
   captionRight?: number
   intro?: OverlayCard
-}
-
-// Profil persistant le plus récent du navigateur MCP (session connectée).
-function findMcpProfile (): string {
-  if (process.env.MCP_PROFILE) return process.env.MCP_PROFILE
-  const base = resolve(homedir(), '.cache/ms-playwright-mcp')
-  if (!existsSync(base)) throw new Error(`Profil MCP introuvable (${base}) : renseignez MCP_PROFILE.`)
-  const candidates = readdirSync(base)
-    .filter(name => name.startsWith('mcp-chrome-'))
-    .map(name => ({ path: resolve(base, name), mtime: statSync(resolve(base, name)).mtimeMs }))
-    .sort((a, b) => b.mtime - a.mtime)
-  if (!candidates.length) throw new Error(`Aucun profil dans ${base} : renseignez MCP_PROFILE.`)
-  return candidates[0].path
 }
 
 function loadNarratedBeats (script: Script, audioDir: string): NarratedBeat[] {
@@ -94,13 +112,14 @@ export async function record (opts: RecordOptions) {
   const size = opts.size ?? '1920x1080'
   const [width, height] = size.split('x').map(Number)
   if (!width || !height) throw new Error(`Taille invalide : ${size}`)
+  const scale = opts.scale ?? 1
+  if (!(scale >= 1 && scale <= 4)) throw new Error(`Échelle invalide : ${opts.scale} (entre 1 et 4)`)
+  const videoSize = { width: Math.round(width * scale / 2) * 2, height: Math.round(height * scale / 2) * 2 }
 
   const videoDir = resolve(videosDir, videoName)
   const outDir = resolve(videoDir, 'out')
-  const rawDir = resolve(outDir, 'raw')
   if (!existsSync(videoDir)) throw new Error(`Dossier vidéo introuvable : ${videoDir}`)
-  mkdirSync(rawDir, { recursive: true })
-  for (const file of readdirSync(rawDir)) rmSync(resolve(rawDir, file), { recursive: true, force: true })
+  mkdirSync(outDir, { recursive: true })
 
   // script.md est la source de vérité de la narration ; il est optionnel pour
   // les formats courts pilotés entièrement par le scénario (sous-titres
@@ -115,6 +134,8 @@ export async function record (opts: RecordOptions) {
   const scenario = await import(pathToFileURL(scenarioPath).href) as {
     default: (ctx: ScenarioContext) => Promise<void>
     intro?: OverlayCard
+    // style des sous-titres incrustés (`export const caption = { style: 'plain' }`)
+    caption?: OverlayOptions['caption']
   }
 
   const introCard: OverlayCard | undefined = opts.intro ?? scenario.intro ?? (script
@@ -136,67 +157,62 @@ export async function record (opts: RecordOptions) {
   // montage, les beats sans citation des fragments ; les scènes intermédiaires
   // ne sont plus calées sur la durée estimée de la narration.
   const isPanelMode = script?.frontMatter.habillage === 'panneaux'
+  const sizeLabel = `${width}x${height}${scale !== 1 ? ` × ${scale} = ${videoSize.width}x${videoSize.height}` : ''}${opts.headed ? ', headed' : ''}`
   console.log(script
-    ? `Vidéo « ${videoName} » (${width}x${height}${opts.headed ? ', headed' : ''}) — ${script.beats.length} beats${isPanelMode ? ', habillage panneaux' : ''}`
-    : `Vidéo « ${videoName} » (${width}x${height}${opts.headed ? ', headed' : ''}) — format court sans script.md`)
+    ? `Vidéo « ${videoName} » (${sizeLabel}) — ${script.beats.length} beats${isPanelMode ? ', habillage panneaux' : ''}`
+    : `Vidéo « ${videoName} » (${sizeLabel}) — format court sans script.md`)
 
-  // Authentification :
-  //  - par défaut, session NHI récoltée automatiquement via le proxy du
-  //    navigateur MCP (`nhi-proxy`), puis injectée comme cookies ;
-  //  - `state` : cookies fournis explicitement ;
-  //  - `noState` : aucun cookie (le proxy injecte côté serveur, mais le SPA
-  //    restera anonyme faute de document.cookie) ;
-  //  - `profile` : profil persistant du navigateur MCP (expérimental).
-  let useState = opts.noState ? undefined : opts.state
-  const launchOptions = mcpLaunchOptions()
-  const chromeArgs = { channel: 'chrome' as const, headless: !opts.headed }
-  if (!useState && !opts.profile) {
-    useState = resolve(videosDir, '.auth/state.json')
-    await ensureProxyAuth(useState, { log })
-  }
-  if (!opts.profile && !launchOptions.proxy && !useState) {
-    console.warn('Aucun proxy NHI configuré : le chargement sera anonyme (voir auth.md).')
-  }
+  const proxy = proxyServer()
+  if (proxy) log(`proxy NHI : ${proxy}`)
+  else if (!opts.state) console.warn('Aucun proxy NHI configuré : le chargement sera anonyme (voir auth.md).')
 
-  let browser: BrowserContext
-  let ownedBrowser: Awaited<ReturnType<typeof chromium.launch>> | undefined
   // `--force-color-profile=srgb` : rendu des couleurs stable d'une machine à
   // l'autre (captures de cartes et de graphiques)
-  if (opts.profile) {
-    browser = await chromium.launchPersistentContext(findMcpProfile(), {
-      ...chromeArgs,
-      viewport: { width, height },
-      deviceScaleFactor: 1,
-      locale: 'fr-FR',
-      timezoneId: 'Europe/Paris',
-      recordVideo: { dir: rawDir, size: { width, height } },
-      ...launchOptions,
-      args: ['--force-color-profile=srgb', ...(launchOptions.args ?? [])]
-    })
-  } else {
-    ownedBrowser = await chromium.launch({
-      ...chromeArgs,
-      proxy: launchOptions.proxy,
-      args: ['--force-color-profile=srgb', ...(launchOptions.args ?? [])]
-    })
-    browser = await ownedBrowser.newContext({
-      viewport: { width, height },
-      deviceScaleFactor: 1,
-      locale: 'fr-FR',
-      timezoneId: 'Europe/Paris',
-      recordVideo: { dir: rawDir, size: { width, height } },
-      storageState: useState
-    })
-  }
-
-  await installCursor(browser)
-  await installOverlay(browser, {
-    intro: script ? undefined : introCard,
-    assets: loadOverlayAssets(),
-    caption: { right: opts.captionRight }
+  const browser = await chromium.launch({
+    channel: 'chrome',
+    headless: !opts.headed,
+    proxy: proxy ? { server: proxy } : undefined,
+    // le screencast de Chrome headless n'est en haute densité qu'avec ce
+    // drapeau, en plus du deviceScaleFactor du contexte
+    args: ['--force-color-profile=srgb', ...(scale !== 1 ? [`--force-device-scale-factor=${scale}`] : [])]
   })
-  const page = browser.pages()[0] ?? await browser.newPage()
+  const context = await browser.newContext({
+    viewport: { width, height },
+    deviceScaleFactor: scale,
+    locale: 'fr-FR',
+    timezoneId: 'Europe/Paris',
+    // le proxy re-signe l'hôte cible avec sa propre autorité de certification
+    ignoreHTTPSErrors: !!proxy,
+    // la CSP des services (font-src) bloque la Nunito embarquée en data: des
+    // cartons : sans cela, intro et fin s'affichent dans une police de repli
+    bypassCSP: true,
+    storageState: opts.state
+  })
+
+  await installCursor(context)
+  await installOverlay(context, {
+    intro: script ? undefined : introCard,
+    outro: introCard,
+    assets: loadOverlayAssets(),
+    caption: { right: opts.captionRight ?? scenario.caption?.right, style: scenario.caption?.style }
+  })
+  const page = await context.newPage()
   page.setDefaultTimeout(20_000)
+  const rawPath = resolve(outDir, `${videoName}.raw.mkv`)
+  const capture = await startCapture(page, rawPath, videoSize)
+
+  // garde-fou des polices, relevé toutes les 3 s : une police manquante passe
+  // inaperçue au tournage et se voit sur toute la vidéo
+  const fontWarnings = new Set<string>()
+  const fontTimer = setInterval(() => {
+    fontIssues(page).then((issues) => {
+      for (const issue of issues) {
+        if (fontWarnings.has(issue)) continue
+        fontWarnings.add(issue)
+        log(`⚠ ${issue}`)
+      }
+    }).catch(() => {})
+  }, 3000)
 
   page.on('console', (msg) => {
     if (msg.type() !== 'error') return
@@ -210,6 +226,7 @@ export async function record (opts: RecordOptions) {
   })
 
   let originWall = Date.now()
+  let videoStartWall: number | undefined
   let cardT0 = 0
   const timelineBeats: TimelineBeat[] = []
   const idles: TimelineIdle[] = []
@@ -252,6 +269,11 @@ export async function record (opts: RecordOptions) {
     const current = narration[index]
     if (index === 0) {
       originWall = Date.now()
+      // les attentes du prélude (import du décor…) sont coupées avec lui : sans
+      // cette remise à zéro, horodatées sur l'ancienne origine, elles
+      // retombaient sur les premiers beats et les compressaient
+      idles.length = 0
+      idleStart = undefined
       await showIntro(page, introCard!)
       cardT0 = (Date.now() - originWall) / 1000
     } else if (index === 1) {
@@ -288,43 +310,35 @@ export async function record (opts: RecordOptions) {
     console.error(err)
     process.exitCode = 1
   } finally {
+    clearInterval(fontTimer)
     idle.end()
-    // prolonge la session depuis la page (pile réseau du navigateur, qui gère le
-    // certificat du proxy) puis ré-exporte les cookies rafraîchis
-    if (useState && !opts.profile) {
-      try {
-        await page.evaluate(() => fetch('/simple-directory/api/auth/keepalive', { method: 'POST' }).then(r => r.status))
-        await browser.storageState({ path: useState })
-        log(`cookies rafraîchis -> ${useState}`)
-      } catch {
-        log('rafraîchissement des cookies impossible (session expirée ?)')
-      }
-    }
+    videoStartWall = await capture.stop()
     await browser.close()
-    await ownedBrowser?.close()
   }
 
-  const webmPath = resolve(outDir, `${videoName}.webm`)
-  const recorded = await page.video()?.path()
-  if (!recorded || !existsSync(recorded)) {
+  if (videoStartWall === undefined || !existsSync(rawPath)) {
     throw new Error('Aucune vidéo produite.')
   }
-  renameSync(recorded, webmPath)
   const timeline: Timeline = {
     video: videoName,
     width,
     height,
+    scale,
     originWall,
+    videoStartWall,
     cardT0,
-    endWall: (Date.now() - originWall) / 1000,
     beats: timelineBeats,
     idles
   }
   writeFileSync(resolve(outDir, `${videoName}.timeline.json`), JSON.stringify(timeline, null, 2) + '\n')
-  log(`WebM : ${webmPath}`)
+  log(`Vidéo brute : ${rawPath}`)
+  if (fontWarnings.size) {
+    console.warn(`⚠ ${fontWarnings.size} avertissement(s) de police : relire les passages concernés avant diffusion.`)
+    for (const warning of fontWarnings) console.warn(`  - ${warning}`)
+  }
 
   if (opts.mux && !process.exitCode) {
     const { mux } = await import('./mux.ts')
-    await mux(videoName, videosDir, { offset: opts.offset, burn: opts.burn })
+    await mux(videoName, videosDir, { burn: opts.burn })
   }
 }

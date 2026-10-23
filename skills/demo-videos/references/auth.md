@@ -1,42 +1,51 @@
 # Authentification du navigateur d'enregistrement
 
-Le tournage se fait sur `https://koumoul.com/data-fair` (département de test)
-connecté en administrateur, ou sur une application locale selon le scénario.
+Le tournage se fait sur `https://koumoul.com/data-fair` (ou un autre site de la
+plateforme) sous une identité non humaine (NHI), ou sur une page locale
+(`file://`, schémas animés) sans session.
 
-## Proxy NHI (automatique)
+## Proxy NHI
 
-Le kit lit la configuration du navigateur MCP :
+`@data-fair/nhi-proxy` injecte la session de la NHI dans les réponses : le kit
+lance Chromium derrière le proxy, et le navigateur reçoit la session en cookies
+ordinaires dès la première navigation. C'est la recette « script Playwright
+autonome » du skill `data-fair-browse` : aucun cookie à récolter ni à stocker,
+aucune attente avant le tournage. Le proxy re-signe l'hôte cible avec sa propre
+autorité de certification, d'où `ignoreHTTPSErrors` sur le contexte.
 
-1. `~/.config/opencode/playwright-mcp.json` (`browser.launchOptions.proxy`) ;
-2. sinon `~/.config/nhi-proxy/<site>/config.json` (préférence `koumoul.com`,
-   certificat auto-signé : `--ignore-certificate-errors`).
+```bash
+npx @data-fair/nhi-proxy serve --profile "<profil>"   # dans un autre terminal
+npx koumoul-video record --video <slug> --preset muet --mux
+```
 
-`ensureProxyAuth` récolte les `Set-Cookie` d'une requête `curl` à travers le
-proxy (qui échange une assertion contre une session simple-directory) et les
-écrit dans `<videos-dir>/.auth/state.json`. Le proxy ne renouvelle sa session
-qu'après un temps d'inactivité : le kit réessaie toutes les 15 s (12 tentatives).
-**Ne plus naviguer (MCP compris) pendant ~2 min** avant de lancer le tournage.
+Le kit trouve le serveur du proxy, par ordre de priorité :
 
-À la fin du tournage, la session est rafraîchie via
-`/simple-directory/api/auth/keepalive` et ré-exportée.
+1. `NHI_PROXY_SERVER` (ex. `http://127.0.0.1:7335`) ;
+2. le navigateur MCP d'opencode (`~/.config/opencode/playwright-mcp.json`,
+   `browser.launchOptions.proxy`) ;
+3. un profil nhi-proxy local : `NHI_PROXY_PROFILE=<profil>`, sinon le profil
+   de `https://koumoul.com`, sinon le premier profil configuré
+   (`npx @data-fair/nhi-proxy profiles`).
+
+`RECORD_NO_PROXY=1` désactive le proxy (chargement anonyme). Une page locale
+`file://` n'a pas besoin de session : le proxy n'y change rien.
+
+Le contexte est aussi lancé avec `bypassCSP` : la CSP des services (`font-src`)
+bloquerait sinon la police Nunito embarquée en `data:` des cartons, qui
+s'afficheraient dans une police de repli.
 
 ## Variantes
 
 | Option | Effet |
 | --- | --- |
-| `--state <fichier>` | cookies de session explicites (storage state Playwright) |
-| `--no-state` | aucun cookie : le proxy injecte côté serveur, mais le SPA reste anonyme |
-| `--profile` | profil persistant le plus récent du navigateur MCP (fermer le navigateur MCP avant : profil verrouillé) |
-| `auth:import <fichier>` | convertit un storage state récolté depuis le navigateur MCP (`playwright_browser_run_code_unsafe`) en `<videos-dir>/.auth/state.json` |
-
-Variables d'environnement : `NHI_PROXY_SERVER` (proxy explicite),
-`RECORD_NO_PROXY=1` (aucun proxy), `MCP_PROFILE` (profil persistant),
-`VIDEO_KIT_PYTHON` (interpréteur Python de la voix).
+| `--state <fichier>` | cookies de session explicites (storage state Playwright), en plus du proxy : site hors plateforme, session humaine de test |
+| `clean --url <url>` | back-office sur lequel supprimer les ressources de démo (défaut `https://koumoul.com/data-fair/`), avec la session du proxy |
 
 ## Règles
 
-- Ne **jamais committer** `.auth/`, un cookie, un token ou un `.env`.
+- Ne **jamais committer** un cookie, un token ou un `.env`.
 - Ne jamais afficher un secret à l'écran : vérifier le contenu des formulaires
   et des jeux de données avant montage.
-- L'échange NHI est temporaire : relancer si le proxy répond encore une session
-  fraîche (`session NHI du proxy encore fraîche, nouvelle tentative…`).
+- Un seul proxy par profil et par machine : chaque échange de session est
+  compté par le limiteur de simple-directory (`502` du proxy = attendre 60 s,
+  voir `data-fair-browse`).

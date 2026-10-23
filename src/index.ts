@@ -5,7 +5,7 @@
 export { parseScript, parsePronunciations, tokenize, wordCore, speakText, spokenText } from './script.ts'
 export type { Beat, Script, PronunciationRule, SpokenText } from './script.ts'
 export * from './human.ts'
-export { installOverlay, loadOverlayAssets, habillageCss, showIntro, hideIntro, setCaption, showOutro } from './overlay.ts'
+export { installOverlay, loadOverlayAssets, habillageCss, cardHtml, frenchSpacing, showIntro, hideIntro, setCaption, showOutro, say } from './overlay.ts'
 export type { OverlayCard, OverlayAssets, OverlayOptions } from './overlay.ts'
 export { panelBadge, panelDuration, PANEL_MIN_DUR } from './panels.ts'
 export type { PanelSpec } from './panels.ts'
