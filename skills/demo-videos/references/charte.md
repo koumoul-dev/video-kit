@@ -17,7 +17,7 @@ compris dans les schémas animés maison des formats courts.
 | Trait d'accent et badge | `#81D4FA` (secondary) |
 | Texte de carton | blanc |
 | Sous-titres incrustés | texte blanc sur `#424242` (surface-inverse) translucide |
-| Sous-titres `plain` | texte `#1F2937` (on-background de datafair.cloud), halo blanc, sans bandeau |
+| Sous-titres `plain` | texte marine `#0A2F5E` en gras, halo clair, sans bandeau, pleine largeur (rendu des teasers de Nicolas) |
 | Fond clair des schémas | `#F8FBFE` (background de datafair.cloud) |
 | Police | Nunito 400 / 600 / 700, sous-ensemble latin embarqué en base64 ; TTF 600 pour l'incrustation `.st.mp4` |
 | Logo | Koumoul blanc « La donnée accessible », SVG officiel (`logo-slogan-white.svg`) |

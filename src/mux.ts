@@ -19,7 +19,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import { CHARTE_DIR } from './paths.ts'
-import { CAPTURE_FPS } from './capture.ts'
+import { CAPTURE_FPS, COLOR_FILTER, COLOR_TAGS } from './capture.ts'
 import { panelBadge, panelDuration, renderPanelPng, type PanelSpec } from './panels.ts'
 import { parsePronunciations, parseScript, speakText, wordCore, type PronunciationRule } from './script.ts'
 import { ffprobeDuration, type WordTiming } from './tts.ts'
@@ -43,9 +43,10 @@ const WEAK_BREAK_WORDS = new Set([
 export interface MuxOptions { burn?: boolean }
 
 // Encodage de diffusion, commun à tous les segments (le concat demuxer recolle
-// des morceaux aux paramètres identiques) ; le grain des cartons évite les
+// des morceaux aux paramètres identiques) : plage vidéo et BT.709 déclarés,
+// chaque entrée passant par COLOR_FILTER ; le grain des cartons évite les
 // bandes du dégradé.
-const X264 = ['-c:v', 'libx264', '-preset', 'slow', '-crf', '18', '-pix_fmt', 'yuv420p']
+const X264 = ['-c:v', 'libx264', '-preset', 'slow', '-crf', '18', '-pix_fmt', 'yuv420p', ...COLOR_TAGS]
 
 // Calage temps mur → temps source par l'horodatage de la première image :
 // exact, sans échelle ni détection. `cardT0` est relevé quand le carton est
@@ -646,6 +647,7 @@ export async function mux (videoName: string, videosDir: string, opts: MuxOption
           '-y', '-loglevel', 'error',
           '-loop', '1', '-framerate', String(fps), '-i', png,
           '-t', part.panel.duration.toFixed(3),
+          '-vf', COLOR_FILTER,
           '-an', ...X264,
           '-r', String(fps),
           segPath
@@ -655,7 +657,7 @@ export async function mux (videoName: string, videosDir: string, opts: MuxOption
         segArgs = [
           '-y', '-loglevel', 'error',
           '-ss', part.start.toFixed(3), '-to', part.end.toFixed(3), '-i', source,
-          '-vf', part.factor === 1 ? 'setpts=PTS-STARTPTS' : `setpts=(PTS-STARTPTS)/${part.factor}`,
+          '-vf', `${part.factor === 1 ? 'setpts=PTS-STARTPTS' : `setpts=(PTS-STARTPTS)/${part.factor}`},${COLOR_FILTER}`,
           '-an', ...X264,
           segPath
         ]
@@ -681,12 +683,14 @@ export async function mux (videoName: string, videosDir: string, opts: MuxOption
     args.push(
       '-filter_complex', filterComplex,
       '-map', '0:v', '-map', '[aout]',
+      '-vf', COLOR_FILTER,
       ...X264,
       '-c:a', 'aac', '-b:a', '192k'
     )
   } else if (!concatList) {
     args.push(
       '-map', '0:v', '-an',
+      '-vf', COLOR_FILTER,
       ...X264
     )
   }
@@ -712,7 +716,7 @@ export async function mux (videoName: string, videosDir: string, opts: MuxOption
       const burn = spawnSync('ffmpeg', [
         '-y', '-loglevel', 'warning',
         '-i', mp4,
-        '-vf', `subtitles=${videoName}.srt:fontsdir=${resolve(CHARTE_DIR, 'libass')}:force_style='${style}'`,
+        '-vf', `subtitles=${videoName}.srt:fontsdir=${resolve(CHARTE_DIR, 'libass')}:force_style='${style}',${COLOR_FILTER}`,
         ...X264,
         '-c:a', 'copy',
         '-movflags', '+faststart',

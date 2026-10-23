@@ -25,9 +25,9 @@
 // Charte : couleurs du thème par défaut de data-fair
 // (`@data-fair/lib-common-types/theme` : primary #1976D2, secondary #81D4FA,
 // surface-inverse #424242 pour les sous-titres, on-background #1F2937 de
-// datafair.cloud pour le texte sur fond clair) ; seul le haut du dégradé sort
-// du thème (#0B3E8C, blue-darken-4 #0D47A1 assombri de 13 % pour donner de la
-// profondeur). Police Nunito embarquée en base64 et logo officiel Koumoul blanc
+// datafair.cloud) ; sortent du thème le haut du dégradé (#0B3E8C, blue-darken-4
+// #0D47A1 assombri de 13 % pour la profondeur) et le marine #0A2F5E des
+// sous-titres `plain` (rendu des teasers de Nicolas, plus lisible). Police Nunito embarquée en base64 et logo officiel Koumoul blanc
 // en SVG (dépôt communication, `logos/svg/logo-slogan-white.svg`) — aucun asset
 // réseau, pour que le carton soit complet dès la première frame.
 
@@ -102,7 +102,7 @@ export function habillageCss (fontsCss = ''): string {
         #__demo-overlay, #__demo-overlay * { box-sizing: border-box; }
         #__demo-overlay {
           --demo-from: #0B3E8C; --demo-to: #1976D2; --demo-accent: #81D4FA;
-          --demo-caption-bg: rgba(66, 66, 66, .88); --demo-ink: #1F2937;
+          --demo-caption-bg: rgba(66, 66, 66, .88); --demo-ink: #0A2F5E;
           position: fixed; inset: 0; z-index: 2147483000; pointer-events: none;
           font-family: 'Nunito', 'DejaVu Sans', system-ui, sans-serif;
         }
@@ -158,9 +158,10 @@ export function habillageCss (fontsCss = ''): string {
           box-shadow: 0 1.1vh 3.6vh rgba(0, 0, 0, .38);
           transition: opacity .2s ease;
         }
+        #__demo-caption.demo-plain { width: calc(100% - 7.5vw); max-width: none; text-align: center; }
         #__demo-caption.demo-plain .caption-box {
-          background: none; box-shadow: none; color: var(--demo-ink);
-          text-shadow: 0 0 .6vh #fff, 0 0 1.2vh #fff;
+          padding: 0; background: none; box-shadow: none; color: var(--demo-ink);
+          font-weight: 700; text-shadow: 0 .3vh 1.7vh rgba(248, 251, 254, .95);
         }
         #__demo-caption.demo-visible .caption-box { opacity: 1; }
       `

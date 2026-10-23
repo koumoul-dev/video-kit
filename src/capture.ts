@@ -18,6 +18,14 @@ import type { Page } from '@playwright/test'
 
 export const CAPTURE_FPS = 25
 
+// Couleurs de diffusion : les JPEG du screencast sont en plage pleine (JFIF,
+// BT.601). Gardée telle quelle, la vidéo était marquée `pc` et les navigateurs
+// l'affichaient délavée (gris clairs blanchis, traits fins effacés). Tout
+// encodage du kit convertit donc en plage vidéo (`tv`) et en BT.709, l'espace
+// supposé des vidéos HD, et le déclare dans le flux.
+export const COLOR_FILTER = 'scale=out_color_matrix=bt709:out_range=tv,format=yuv420p'
+export const COLOR_TAGS = ['-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv']
+
 // Nombre d'images de sortie (cadence fixe) écoulées entre le début de la
 // capture et l'instant `ts` : les créneaux d'avant `ts` montrent encore l'image
 // précédente. Exporté pour les tests.
@@ -39,8 +47,8 @@ export async function startCapture (page: Page, out: string, size: { width: numb
     '-y', '-loglevel', 'error',
     '-f', 'image2pipe', '-framerate', String(fps), '-c:v', 'mjpeg', '-i', 'pipe:0',
     // dimensions paires exigées par yuv420p ; gris si une image est plus petite
-    '-vf', `pad=${size.width}:${size.height}:0:0:gray,crop=${size.width}:${size.height}:0:0`,
-    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '10', '-pix_fmt', 'yuv420p',
+    '-vf', `pad=${size.width}:${size.height}:0:0:gray,crop=${size.width}:${size.height}:0:0,${COLOR_FILTER}`,
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '10', '-pix_fmt', 'yuv420p', ...COLOR_TAGS,
     out
   ], { stdio: ['pipe', 'ignore', 'pipe'] })
   let stderr = ''
