@@ -13,7 +13,7 @@
 // proxy et reçoit la session en cookies (voir auth.ts et
 // `skills/demo-videos/references/auth.md`).
 
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { chromium, type Page } from '@playwright/test'
@@ -120,8 +120,6 @@ export async function record (opts: RecordOptions) {
   const outDir = resolve(videoDir, 'out')
   if (!existsSync(videoDir)) throw new Error(`Dossier vidéo introuvable : ${videoDir}`)
   mkdirSync(outDir, { recursive: true })
-  // brut WebM d'un ancien kit : plus lu par le montage
-  rmSync(resolve(outDir, `${videoName}.webm`), { force: true })
 
   // script.md est la source de vérité de la narration ; il est optionnel pour
   // les formats courts pilotés entièrement par le scénario (sous-titres

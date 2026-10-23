@@ -6,10 +6,11 @@ le rendu attendu et les règles à respecter quand on adapte un scénario.
 
 ## Couleurs et typographie
 
-Les couleurs sont celles du thème par défaut de data-fair
-(`@data-fair/lib-common-types/theme`), complétées par celles du portail
-datafair.cloud pour le texte sur fond clair. Ne pas en inventer d'autres, y
-compris dans les schémas animés maison des formats courts.
+Les cartons et les sous-titres du kit suivent le thème par défaut de data-fair
+(`@data-fair/lib-common-types/theme`), avec deux exceptions assumées listées
+ci-dessous. Les schémas animés maison des formats courts gardent leur propre
+palette (celle des teasers de Nicolas, jugée plus lisible que les couleurs de
+texte du thème) : y faire une passe de cohérence plutôt que de la remplacer.
 
 | Rôle | Valeur |
 | --- | --- |

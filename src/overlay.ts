@@ -24,12 +24,12 @@
 //
 // Charte : couleurs du thème par défaut de data-fair
 // (`@data-fair/lib-common-types/theme` : primary #1976D2, secondary #81D4FA,
-// surface-inverse #424242 pour les sous-titres, on-background #1F2937 de
-// datafair.cloud) ; sortent du thème le haut du dégradé (#0B3E8C, blue-darken-4
-// #0D47A1 assombri de 13 % pour la profondeur) et le marine #0A2F5E des
-// sous-titres `plain` (rendu des teasers de Nicolas, plus lisible). Police Nunito embarquée en base64 et logo officiel Koumoul blanc
-// en SVG (dépôt communication, `logos/svg/logo-slogan-white.svg`) — aucun asset
-// réseau, pour que le carton soit complet dès la première frame.
+// surface-inverse #424242 pour les sous-titres à bandeau) ; sortent du thème le
+// haut du dégradé (#0B3E8C, blue-darken-4 #0D47A1 assombri de 13 % pour la
+// profondeur) et le marine #0A2F5E des sous-titres `plain` (rendu des teasers
+// de Nicolas, plus lisible). Police Nunito embarquée en base64 et logo officiel
+// Koumoul blanc en SVG (dépôt communication, `logos/svg/logo-slogan-white.svg`)
+// — aucun asset réseau, pour que le carton soit complet dès la première frame.
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
