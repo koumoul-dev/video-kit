@@ -60,8 +60,10 @@ de `script.md`, le titre du beat devient le titre du panneau.
 
 - **Même charte que les cartons** : dégradé `#0A2F5E → #1976D2`, trait d'accent
   `#81D4FA` sous le badge, Nunito embarquée, logo Koumoul, site (`carton_site`) ;
-- eyebrow numéroté (`01 / 05`), titre, texte de 1 à 2 phrases (viser ~100 à
-  150 caractères, c'est un panneau, pas une page) ;
+- eyebrow : numérotation `01 / 05` par défaut, remplaçable par un libellé de
+  front matter (`panneaux_badge: Data Fair`, ex. marque ou événement) ; titre,
+  texte de 1 à 2 phrases (viser ~100 à 150 caractères, c'est un panneau, pas une
+  page) ;
 - **durée = temps de lecture** (~2,6 mots/s, plancher 3 s) ;
 - rendu PNG par Chromium headless **sans animation** (transitions neutralisées) :
   l'image est déterministe, le panneau est encodé en segment muet à la cadence

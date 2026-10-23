@@ -12,6 +12,7 @@ atelier: L'IA au service des données ouvertes
 cible: ~5 min
 fournisseur: muet                    # edge | kokoro | muet
 habillage: panneaux                  # optionnel : panneaux entre fragments (muet)
+panneaux_badge: Data Fair            # optionnel : badge des panneaux (défaut : 01 / 09)
 environnement: https://koumoul.com/data-fair — département test
 carton_eyebrow: Atelier — L'IA au service des données ouvertes
 carton_sous_titre: Data Fair — démonstration
@@ -116,6 +117,9 @@ coupé.
 - les scènes intermédiaires ne sont plus calées sur la durée estimée de la
   narration (seuls le carton d'ouverture et le carton de fin gardent la leur) :
   la citation est un texte de panneau court, pas une narration ;
+- le badge des panneaux est la numérotation `01 / 09` ; `panneaux_badge` dans le
+  front matter la remplace par un libellé fixe (marque, événement — ex.
+  `panneaux_badge: Data Fair`) ;
 - après l'attente de rendu d'un fragment, appeler `mark()` : le montage coupe
   `[t0, marque]`. Sans marque, la détection automatique coupe un écran blanc de
   chargement, mais pas une ancienne page qui reste affichée pendant la

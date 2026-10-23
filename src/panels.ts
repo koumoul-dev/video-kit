@@ -1,8 +1,9 @@
 // Panneaux de chapitre insérés au montage entre les fragments vidéo.
 //
 // Un panneau est une carte plein écran à la charte (mêmes styles que les cartons
-// d'intro/fin, cf. `habillageCss` dans overlay.ts) : eyebrow numéroté, titre,
-// texte de lecture et site. Il est rendu en PNG par un Chromium headless puis
+// d'intro/fin, cf. `habillageCss` dans overlay.ts) : eyebrow (numéroté par
+// défaut, libellé libre via `panneaux_badge`), titre, texte de lecture et site.
+// Il est rendu en PNG par un Chromium headless puis
 // encodé en segment MP4 muet par `mux.ts` (une frame tenue pendant le temps de
 // lecture du texte). Utilisé par l'habillage `panneaux` : les citations des
 // beats deviennent des panneaux, les beats sans citation des fragments.
@@ -27,6 +28,14 @@ export interface PanelSpec {
 export function panelDuration (text: string): number {
   const words = (text.match(/[\p{L}\p{N}]+/gu) ?? []).length
   return Math.max(PANEL_MIN_DUR, Math.round((words / MUET_WORDS_PER_SECOND) * 10) / 10)
+}
+
+// Eyebrow d'un panneau : numérotation `01 / 09` par défaut, libellé libre si le
+// front matter du script fournit `panneaux_badge` (ex. « Data Fair »).
+export function panelBadge (label: string | undefined, index: number, total: number): string {
+  const custom = label?.trim()
+  if (custom) return custom
+  return `${String(index + 1).padStart(2, '0')} / ${String(total).padStart(2, '0')}`
 }
 
 function escapeHtml (value: string | undefined): string {

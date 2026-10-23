@@ -18,7 +18,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
-import { panelDuration, renderPanelPng, type PanelSpec } from './panels.ts'
+import { panelBadge, panelDuration, renderPanelPng, type PanelSpec } from './panels.ts'
 import { parsePronunciations, parseScript, speakText, wordCore, type PronunciationRule } from './script.ts'
 import { ffprobeDuration, type WordTiming } from './tts.ts'
 import { IDLE_FACTOR, type Timeline } from './timeline.ts'
@@ -547,6 +547,8 @@ export async function mux (videoName: string, videosDir: string, opts: MuxOption
   const panelBeats = isPanelMode
     ? beats.slice(1, -1).filter(beat => (textById.get(beat.id) ?? '').trim())
     : []
+  // Badge des panneaux : numérotation `01 / 09` par défaut, remplaçable par un
+  // libellé de front matter (`panneaux_badge: Data Fair`).
   const panels = panelBeats.map((beat, index) => {
     const text = (textById.get(beat.id) ?? '').trim()
     return {
@@ -555,7 +557,7 @@ export async function mux (videoName: string, videosDir: string, opts: MuxOption
       spec: {
         title: beatTitles.get(beat.id) ?? beat.id,
         text,
-        badge: `${String(index + 1).padStart(2, '0')} / ${String(panelBeats.length).padStart(2, '0')}`,
+        badge: panelBadge(frontMatter.panneaux_badge, index, panelBeats.length),
         site: frontMatter.carton_site
       } satisfies PanelSpec
     }

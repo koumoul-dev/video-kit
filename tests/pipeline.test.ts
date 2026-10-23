@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
 import { buildPanelParts, buildSilentCues, buildTimeMapper, findLoadingEnd, groupTokens, mergeIdleSegments, wrapCue } from '../src/mux.ts'
-import { panelDuration, panelHtml } from '../src/panels.ts'
+import { panelBadge, panelDuration, panelHtml } from '../src/panels.ts'
 import { silentDuration } from '../src/tts.ts'
 import { parsePronunciations, parseScript, speakText, tokenize } from '../src/script.ts'
 
@@ -137,4 +137,10 @@ test('lecture de script.md : front matter, beats et prononciations', () => {
   const spoken = speakText('Data Fair est une plateforme', rules)
   assert.match(spoken.tokens.join(' '), /Data Fère/)
   assert.deepEqual(spoken.spokenToDisplay.slice(0, 2), [0, 1])
+})
+
+test('badge des panneaux : numérotation par défaut, libellé du front matter sinon', () => {
+  assert.equal(panelBadge(undefined, 0, 9), '01 / 09')
+  assert.equal(panelBadge('  ', 2, 12), '03 / 12')
+  assert.equal(panelBadge(' Data Fair ', 0, 9), 'Data Fair')
 })

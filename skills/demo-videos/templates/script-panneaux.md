@@ -4,6 +4,7 @@ titre: Titre de la vidéo
 cible: ~2 min
 fournisseur: muet
 habillage: panneaux
+panneaux_badge: Data Fair
 environnement: https://koumoul.com/data-fair — département Test et développement
 carton_eyebrow: Événement — Nom de l'événement
 carton_sous_titre: Data Fair — démonstration en boucle
