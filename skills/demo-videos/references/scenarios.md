@@ -107,12 +107,14 @@ Le contexte expose `page`, `beat`, `idle`, `log`, `video`, `videosDir`.
 - `export const caption = { style: 'plain' }` (format court) : sous-titres en
   texte foncé sans bandeau, pour un schéma sur fond clair ; `right` décale la
   zone comme `--caption-right`.
-- **Carte de fin = même gabarit que l'intro** : une phrase d'appel en `title`,
+- **Carte de fin = même gabarit que l'intro** : `showOutro(page)` sans carton
+  reprend l'intro à l'identique ; sinon une phrase d'appel en `title`,
   éventuellement un `subtitle` ; le site va dans `site` (sous le logo) et, s'il
   est omis, reprend celui de l'intro (`carton_site` ou `intro.site`).
 - Ne pas utiliser `page.goto` après `hideIntro` quand `intro` est exportée : la
-  carte ne doit pas réapparaître. En mode à beats, naviguer pendant le carton
-  (beat 0) perdrait le repère de calage.
+  carte ne doit pas réapparaître. En mode à beats, ne pas naviguer pendant le
+  carton (beat 0) : l'overlay est réinstallé par la nouvelle page et le carton
+  disparaît.
 
 ## Habillage panneaux (`habillage: panneaux`)
 

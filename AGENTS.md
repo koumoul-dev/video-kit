@@ -45,8 +45,8 @@ node bin/koumoul-video.mjs help
 - Tout est en français (code, commentaires, docs, commits).
 - Commits conventionnels : `feat:`, `fix:`, `docs:`, `chore:`…
 - Ne jamais committer `dist/`, `node_modules/`, `*.tgz`.
-- Aucun secret dans le dépôt : l'auth navigateur vit dans `<videos-dir>/.auth/`
-  des projets consommateurs.
+- Aucun secret dans le dépôt : la session vient du proxy NHI au tournage, rien
+  n'est stocké.
 - Toute évolution du comportement ou des options du CLI doit être répercutée
   dans `skills/demo-videos/` (SKILL.md et `references/`), qui est la
   documentation de référence pour les utilisateurs et les agents.

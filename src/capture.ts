@@ -62,7 +62,9 @@ export async function startCapture (page: Page, out: string, size: { width: numb
 
   await page.screencast.start({
     size,
-    quality: 90,
+    // qualité JPEG 95 : texte fixe à ~38,7 dB d'un screenshot, contre 36,9 dB
+    // en 90 ; le plafond du yuv420p de diffusion est à ~39,9 dB
+    quality: 95,
     onFrame: ({ data, timestamp }) => {
       if (startTs === undefined) startTs = timestamp
       fill(slotsBefore(startTs, timestamp, fps))

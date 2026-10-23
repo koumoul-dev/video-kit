@@ -39,9 +39,6 @@ Retours d'expérience des tournages `pilotage`, `documentation` et
   et le montage ne peut pas compresser.
 - **La sortie ne doit pas aller dans `tests/output`** : Playwright vide ce dossier
   à chaque lancement de tests. Le kit écrit dans `<videos-dir>/<slug>/out/`.
-- **Ne pas supprimer le flash blanc de l'intro** en mode à beats : le calage
-  est exact (horodatage des images), mais le flash reste le repère des anciens
-  bruts WebM.
 - **Avertissements de police en fin de tournage** (`⚠ police …`) : la page
   concernée s'affiche dans une police de repli (souvent un aperçu de page de
   portail ou une iframe dont la feuille de thème n'a pas chargé). Relire le
@@ -57,8 +54,11 @@ Retours d'expérience des tournages `pilotage`, `documentation` et
 
 ## Habillage et CSP
 
-- Data Fair applique une CSP `style-src` stricte : le kit utilise des **feuilles
-  de style constructibles** (`document.adoptedStyleSheets`), pas de `<style>` ni
+- Data Fair applique une CSP stricte. Le contexte d'enregistrement est lancé
+  avec `bypassCSP` : sans lui, `font-src` bloque la Nunito embarquée en `data:`
+  et les cartons posés sur le produit s'affichent dans une police de repli
+  (c'était le cas des vidéos tournées avant). Le kit garde des **feuilles de
+  style constructibles** (`document.adoptedStyleSheets`), pas de `<style>` ni
   d'attribut `style` pour les règles. Ne pas casser ce mécanisme en ajoutant du
   CSS inline dynamique.
 - Les cartons embarquent police et logo en base64 : le contenu de la première
@@ -70,7 +70,7 @@ Retours d'expérience des tournages `pilotage`, `documentation` et
   Inspecter la vidéo avant diffusion.
 - **Nettoyer la démo distante** après tournage (`clean`), y compris en cas
   d'échec partiel (`--id`).
-- **Ne jamais committer** `out/`, `.auth/`, les MP4, les CSV volumineux : ils
+- **Ne jamais committer** `out/`, les MP4, les CSV volumineux : ils
   restent locaux et se copient hors du dépôt pour diffusion.
 
 ## Environnement

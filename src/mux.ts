@@ -1,9 +1,8 @@
 // Assemble la piste de narration et la vidéo.
 //
-// Le t=0 de la vidéo est calé sur le carton de titre : par l'horodatage de la
-// première image (`videoStartWall`, capture du kit ≥ 0.4), sinon par détection
-// du changement de scène blanc → bleu (ancien brut WebM), puis chaque narration
-// est placée à son horodatage (timeline écrite par recorder.ts). Produit
+// Le t=0 de la vidéo est calé sur le carton de titre grâce à l'horodatage de la
+// première image (`videoStartWall`), puis chaque narration est placée à son
+// horodatage (timeline écrite par recorder.ts). Produit
 // out/<video>.mp4 (H.264/AAC) et out/<video>.srt ; `--burn` produit en plus
 // out/<video>.st.mp4 avec les sous-titres incrustés (bandeau sombre, Nunito).
 //
@@ -20,6 +19,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import { CHARTE_DIR } from './paths.ts'
+import { CAPTURE_FPS } from './capture.ts'
 import { panelBadge, panelDuration, renderPanelPng, type PanelSpec } from './panels.ts'
 import { parsePronunciations, parseScript, speakText, wordCore, type PronunciationRule } from './script.ts'
 import { ffprobeDuration, type WordTiming } from './tts.ts'
@@ -40,21 +40,19 @@ const WEAK_BREAK_WORDS = new Set([
   'vers', 'chez', 'par', 'donc', 'or', 'ni', 'car', 'lorsque', 'quand', 'si', 'afin', 'comme'
 ])
 
-export interface MuxOptions { offset?: number, burn?: boolean }
+export interface MuxOptions { burn?: boolean }
 
 // Encodage de diffusion, commun à tous les segments (le concat demuxer recolle
-// des morceaux aux paramètres identiques). `-tune stillimage` garde le texte
-// d'interface net ; le grain des cartons évite les bandes du dégradé.
-const X264 = ['-c:v', 'libx264', '-preset', 'slow', '-crf', '18', '-tune', 'stillimage', '-pix_fmt', 'yuv420p']
+// des morceaux aux paramètres identiques) ; le grain des cartons évite les
+// bandes du dégradé.
+const X264 = ['-c:v', 'libx264', '-preset', 'slow', '-crf', '18', '-pix_fmt', 'yuv420p']
 
-// Calage temps mur → temps source quand la timeline porte l'horodatage de la
-// première image : exact, sans échelle ni détection. `cardT0` est relevé quand
-// le carton est posé, avant qu'il soit peint : la coupe prend une marge de
-// 0,1 s (deux images) pour ne pas garder une image du flash blanc. Exporté
-// pour les tests.
+// Calage temps mur → temps source par l'horodatage de la première image :
+// exact, sans échelle ni détection. `cardT0` est relevé quand le carton est
+// posé, avant qu'il soit peint : la coupe prend une marge de 0,1 s (deux
+// images) pour ne pas garder une image de l'écran d'avant. Exporté pour les tests.
 export const CARD_PAINT_MARGIN = 0.1
-export function exactCalibration (timeline: Pick<Timeline, 'originWall' | 'videoStartWall' | 'cardT0'>): { bSource: number, cardTime: number } | undefined {
-  if (timeline.videoStartWall === undefined) return undefined
+export function calibration (timeline: Pick<Timeline, 'originWall' | 'videoStartWall' | 'cardT0'>): { bSource: number, cardTime: number } {
   const bSource = (timeline.originWall - timeline.videoStartWall) / 1000
   return { bSource, cardTime: Math.max(0, timeline.cardT0 + bSource + CARD_PAINT_MARGIN) }
 }
@@ -65,74 +63,18 @@ interface Cue {
   text: string
 }
 
-// Détecte le passage écran blanc → carton : premier changement de scène suivi
-// d'une longue période statique (le carton reste affiché pendant la narration).
-function detectCardTime (source: string): number | undefined {
-  const res = spawnSync('ffmpeg', [
-    '-loglevel', 'error',
-    '-i', source,
-    '-vf', "select='gt(scene,0.25)',metadata=print:file=-",
-    '-an', '-f', 'null', '-'
-  ], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
-  const changes: number[] = []
-  for (const match of res.stdout.matchAll(/pts_time:([\d.]+)/g)) changes.push(Number.parseFloat(match[1]))
-  if (!changes.length) return undefined
-  for (let i = 0; i < changes.length; i++) {
-    const next = changes[i + 1]
-    if (next === undefined || next - changes[i] > 4) return changes[i]
-  }
-  return changes[changes.length - 1]
-}
-
-function videoSize (video: string): { width: number, height: number } {
-  const res = spawnSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=p=0', video], { encoding: 'utf8' })
-  const [width, height] = res.stdout.trim().split(',').map(Number)
-  return { width: Number.isFinite(width) ? width : 1280, height: Number.isFinite(height) ? height : 720 }
-}
-
-// Détecte le premier rendu (première frame avec du contraste dans une zone
-// centrale, hors barres d'outils) à partir de `from` : utilisé pour le préambule
-// du format court, et pour couper le chargement au début de chaque fragment en
-// habillage panneaux. `-ss` en entrée recale les pts sur 0 : on rajoute `from`.
-// Exporté pour les tests.
-export function detectContentStart (video: string, width: number, height: number, from = 0, duration = 4): number | undefined {
-  const cropWidth = Math.round(width * 0.6 / 2) * 2
-  const cropHeight = Math.round(height * 0.5 / 2) * 2
-  const crop = `${cropWidth}:${cropHeight}:${Math.round((width - cropWidth) / 4) * 2}:${Math.round((height - cropHeight) / 4) * 2}`
+// Images d'une zone centrale (hors barres d'outils) de `from` à
+// `from + duration`, marquées vides quand leur luminance est uniforme (écran
+// blanc de chargement). Temps relatifs à `from` (`-ss` en entrée recale les pts).
+function lumaFrames (video: string, size: { width: number, height: number }, from: number, duration: number): Array<{ time: number, blank: boolean }> {
+  const cropWidth = Math.round(size.width * 0.6 / 2) * 2
+  const cropHeight = Math.round(size.height * 0.5 / 2) * 2
+  const crop = `${cropWidth}:${cropHeight}:${Math.round((size.width - cropWidth) / 4) * 2}:${Math.round((size.height - cropHeight) / 4) * 2}`
   const result = spawnSync('ffmpeg', [
-    '-hide_banner',
+    '-hide_banner', '-loglevel', 'error',
     ...(from > 0 ? ['-ss', from.toFixed(3)] : []),
     '-i', video,
     '-t', duration.toFixed(3),
-    '-vf', `crop=${crop},signalstats,metadata=print:file=-`,
-    '-f', 'null', '-'
-  ], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
-  const frames = result.stdout?.matchAll(/pts_time:([\d.]+)[\s\S]*?YMIN=(\d+)[\s\S]*?YMAX=(\d+)/g) ?? []
-  for (const frame of frames) {
-    if (Number(frame[3]) - Number(frame[2]) > 40) return Math.max(0, from + Number(frame[1]) - 0.1)
-  }
-  return undefined
-}
-
-// Coupe le préambule de chargement d'un format court sans carton repère.
-function detectStart (video: string, width: number, height: number): number {
-  return detectContentStart(video, width, height, 0, 4) ?? 0
-}
-
-// Fin du chargement d'un fragment (habillage panneaux) : la page précédente
-// reste affichée le temps de la navigation, puis un écran blanc couvre le
-// chargement jusqu'au premier rendu. On cherche le premier passage blanc →
-// contenu des premières secondes du beat (run blanc d'au moins 0,3 s démarré
-// dans les 8 s) et on rend l'heure du premier rendu. Sans run blanc (fragment
-// sans navigation, page qui se peint directement), aucun trim n'est décidé.
-export function detectLoadingEnd (video: string, width: number, height: number, from: number, window: number): number | undefined {
-  const cropWidth = Math.round(width * 0.6 / 2) * 2
-  const cropHeight = Math.round(height * 0.5 / 2) * 2
-  const crop = `${cropWidth}:${cropHeight}:${Math.round((width - cropWidth) / 4) * 2}:${Math.round((height - cropHeight) / 4) * 2}`
-  const result = spawnSync('ffmpeg', [
-    '-hide_banner', '-loglevel', 'error',
-    '-ss', from.toFixed(3), '-i', video,
-    '-t', window.toFixed(3),
     '-vf', `crop=${crop},signalstats,metadata=print:file=-`,
     '-f', 'null', '-'
   ], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
@@ -140,7 +82,21 @@ export function detectLoadingEnd (video: string, width: number, height: number, 
   for (const match of result.stdout?.matchAll(/pts_time:([\d.]+)[\s\S]*?YMIN=(\d+)[\s\S]*?YMAX=(\d+)/g) ?? []) {
     frames.push({ time: Number(match[1]), blank: Number(match[3]) - Number(match[2]) <= 40 })
   }
-  const detected = findLoadingEnd(frames)
+  return frames
+}
+
+// Préambule d'un format court (sans carton repère) : premier rendu contrasté.
+function detectStart (video: string, size: { width: number, height: number }): number {
+  const first = lumaFrames(video, size, 0, 4).find(frame => !frame.blank)
+  return first ? Math.max(0, first.time - 0.1) : 0
+}
+
+// Fin du chargement d'un fragment (habillage panneaux) : la page précédente
+// reste affichée le temps de la navigation, puis un écran blanc couvre le
+// chargement jusqu'au premier rendu. Sans écran blanc (fragment sans
+// navigation, page qui se peint directement), aucun trim n'est décidé.
+function detectLoadingEnd (video: string, size: { width: number, height: number }, from: number, window: number): number | undefined {
+  const detected = findLoadingEnd(lumaFrames(video, size, from, window))
   return detected !== undefined ? from + detected : undefined
 }
 
@@ -161,15 +117,6 @@ export function findLoadingEnd (frames: Array<{ time: number, blank: boolean }>)
     }
   }
   return undefined
-}
-
-// Cadence de la vidéo source : les segments de panneaux sont encodés à la même
-// cadence pour que le concat demuxer les recolle sans rééchantillonnage.
-function videoFps (video: string): number {
-  const res = spawnSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=r_frame_rate', '-of', 'csv=p=0', video], { encoding: 'utf8' })
-  const [num, den] = res.stdout.trim().split('/').map(Number)
-  const fps = den ? num / den : num
-  return Number.isFinite(fps) && fps > 0 ? Math.round(fps * 1000) / 1000 : 25
 }
 
 function srtTime (seconds: number): string {
@@ -408,9 +355,9 @@ export interface TimeSegment {
   factor: number
 }
 
-export function mergeIdleSegments (spans: Array<{ t0: number, t1: number, factor?: number }>, a: number, b: number, videoDur: number): TimeSegment[] {
+export function mergeIdleSegments (spans: Array<{ t0: number, t1: number, factor?: number }>, offset: number, videoDur: number): TimeSegment[] {
   const mapped = spans
-    .map(span => ({ start: Math.max(0, a * span.t0 + b), end: Math.min(videoDur, a * span.t1 + b), factor: span.factor ?? IDLE_FACTOR }))
+    .map(span => ({ start: Math.max(0, span.t0 + offset), end: Math.min(videoDur, span.t1 + offset), factor: span.factor ?? IDLE_FACTOR }))
     .filter(span => span.end - span.start > 1)
     .sort((x, y) => x.start - y.start)
   const merged: TimeSegment[] = []
@@ -479,10 +426,10 @@ export function buildPanelParts (beats: PanelPartBeat[], idles: TimeSegment[]): 
 export async function mux (videoName: string, videosDir: string, opts: MuxOptions = {}) {
   const videoDir = resolve(videosDir, videoName)
   const outDir = resolve(videoDir, 'out')
-  // brut du kit ≥ 0.4 (capture horodatée), sinon ancien WebM de Playwright
-  const source = [`${videoName}.raw.mkv`, `${videoName}.webm`].map(name => resolve(outDir, name)).find(path => existsSync(path))
-  if (!source) throw new Error(`Vidéo brute introuvable dans ${outDir} (lancez d'abord la commande record).`)
+  const source = resolve(outDir, `${videoName}.raw.mkv`)
+  if (!existsSync(source)) throw new Error(`Vidéo brute introuvable : ${source} (lancez d'abord la commande record).`)
   const timeline = JSON.parse(readFileSync(resolve(outDir, `${videoName}.timeline.json`), 'utf8')) as Timeline
+  if (timeline.videoStartWall === undefined) throw new Error('Timeline sans horodatage des images (tournage d\'un ancien kit) : retourner la vidéo.')
   const scriptPath = resolve(videoDir, 'script.md')
   const script = existsSync(scriptPath) ? parseScript(scriptPath) : undefined
   const textById = new Map((script?.beats ?? []).map(beat => [beat.id, beat.text]))
@@ -498,66 +445,27 @@ export async function mux (videoName: string, videosDir: string, opts: MuxOption
   const videoDur = ffprobeDuration(source)
   const beats = timeline.beats.filter(beat => textById.has(beat.id))
   const isMute = !beats.some(beat => existsSync(resolve(outDir, 'audio', `${beat.id}.mp3`)))
-  const size = timeline.width && timeline.height
-    ? { width: timeline.width, height: timeline.height }
-    : videoSize(source)
+  // fenêtre (pixels CSS, rendu des panneaux) et vidéo brute (× densité)
+  const scale = timeline.scale ?? 1
+  const viewport = { width: timeline.width, height: timeline.height }
+  const size = { width: Math.round(viewport.width * scale / 2) * 2, height: Math.round(viewport.height * scale / 2) * 2 }
 
-  let a: number
-  // temps mur → temps de sortie pré-compression (source décalée de l'amorce)
-  let b: number
   // temps mur → temps source (vidéo brute), pour les découpes ffmpeg
-  let bSource: number
-  let startAt = 0
-  const exact = exactCalibration(timeline)
-  if (opts.offset !== undefined) {
-    a = 1
-    b = opts.offset
-    bSource = opts.offset
-  } else if (beats.length && exact) {
-    // horodatage de la première image : t=0 sur le carton, sans détection
-    a = 1
-    bSource = exact.bSource
-    b = bSource
-    startAt = exact.cardTime
-    console.log(`Calage exact sur l'horodatage des images : carton à ${startAt.toFixed(2)}s`)
-  } else if (beats.length) {
-    // carton de titre : repère de calage (blanc → bleu) et coupe du préambule
-    const detected = detectCardTime(source)
-    if (detected !== undefined) {
-      a = timeline.endWall > 5 ? videoDur / timeline.endWall : 1
-      bSource = detected - a * timeline.cardT0
-      b = bSource
-      console.log(`Carton détecté à ${detected.toFixed(2)}s (attendu ${timeline.cardT0.toFixed(2)}s) — échelle ${a.toFixed(4)}, offset ${b.toFixed(2)}s`)
-      startAt = detected
-    } else {
-      a = 1
-      b = -timeline.cardT0
-      bSource = b
-      console.warn('Carton non détecté : calage sur le début de la vidéo (vérifiez la synchro).')
-    }
-  } else {
-    // format court sans carton : détection du premier rendu par luminance
-    startAt = detectStart(source, size.width, size.height)
-    a = 1
-    b = -startAt
-    bSource = 0
-    if (startAt > 0) console.log(`Préambule de chargement coupé : ${startAt.toFixed(2)}s (démarrage sur le premier rendu)`)
-    else console.warn('Début de vidéo non détecté : conservation du préambule (vérifiez le montage).')
-  }
-  if (startAt > 0 && beats.length) {
-    // les temps de sortie repartent de zéro (démarrage sur le carton), les
-    // découpes des morceaux restent exprimées en temps source
-    b -= startAt
-    console.log(`Amorce coupée : ${startAt.toFixed(2)}s (démarrage sur le carton de titre)`)
-  }
+  const { bSource, cardTime } = calibration(timeline)
+  // démarrage de la sortie : le carton peint (beats), sinon le premier rendu
+  // (format court sans carton repère)
+  const startAt = beats.length ? cardTime : detectStart(source, size)
+  // temps mur → temps de sortie avant compression des attentes
+  const b = bSource - startAt
+  if (startAt > 0) console.log(`Amorce coupée : ${startAt.toFixed(2)}s (${beats.length ? 'carton de titre' : 'premier rendu'}, horodatage des images)`)
 
   // En mode muet, aucune piste audio n'est produite : les beats servent aux
   // sous-titres et à la durée de sortie, sans mélange audio.
   const audioBeats = beats.filter(beat => existsSync(resolve(outDir, 'audio', `${beat.id}.mp3`)))
   // attentes compressées : en temps de sortie pour le timeMapper (sous-titres),
   // en temps source pour les découpes ffmpeg
-  const idleSegments = audioBeats.length ? [] : mergeIdleSegments(timeline.idles ?? [], a, b, Math.max(0, videoDur - startAt))
-  const idleSegmentsSource = audioBeats.length ? [] : mergeIdleSegments(timeline.idles ?? [], a, bSource, videoDur)
+  const idleSegments = audioBeats.length ? [] : mergeIdleSegments(timeline.idles ?? [], b, Math.max(0, videoDur - startAt))
+  const idleSegmentsSource = audioBeats.length ? [] : mergeIdleSegments(timeline.idles ?? [], bSource, videoDur)
   const timeMapper = idleSegments.length ? buildTimeMapper(idleSegments) : (videoTime: number) => videoTime
 
   // Habillage panneaux : la citation d'un beat devient un panneau inséré avant
@@ -570,7 +478,7 @@ export async function mux (videoName: string, videosDir: string, opts: MuxOption
   if (isPanelMode && audioBeats.length) {
     throw new Error('Habillage panneaux : incompatible avec une narration audio (utiliser fournisseur: muet).')
   }
-  const fps = isPanelMode ? videoFps(source) : 25
+  const fps = CAPTURE_FPS
   const beatTitles = new Map((script?.beats ?? []).map(beat => [beat.id, beat.title]))
   const panelBeats = isPanelMode
     ? beats.slice(1, -1).filter(beat => (textById.get(beat.id) ?? '').trim())
@@ -595,12 +503,12 @@ export async function mux (videoName: string, videosDir: string, opts: MuxOption
     let cut = 0
     for (const beat of beats.slice(1)) {
       // découpes exprimées en temps source (vidéo brute)
-      const from = a * beat.t0 + bSource
-      const to = a * beat.t1 + bSource
+      const from = beat.t0 + bSource
+      const to = beat.t1 + bSource
       // marque explicite du scénario (`mark()`) : coupe précise du chargement
       // quand l'ancienne page reste affichée sans écran blanc à détecter
       if (beat.contentT0 !== undefined) {
-        const marked = Math.max(a * beat.contentT0 + bSource, from)
+        const marked = Math.max(beat.contentT0 + bSource, from)
         if (marked - from > 0.15 && marked < to) {
           trims.set(beat.id, marked)
           cut += 1
@@ -610,7 +518,7 @@ export async function mux (videoName: string, videosDir: string, opts: MuxOption
       }
       const window = Math.min(20, to - from)
       if (window <= 1) continue
-      const detected = detectLoadingEnd(source, size.width, size.height, from, window)
+      const detected = detectLoadingEnd(source, size, from, window)
       if (detected !== undefined && detected - from > 0.15 && detected < to) {
         trims.set(beat.id, detected)
         cut += 1
@@ -633,8 +541,8 @@ export async function mux (videoName: string, videosDir: string, opts: MuxOption
       const panel = panels.find(candidate => candidate.beatId === beat.id)
       return {
         // le premier morceau démarre sur le carton peint (amorce coupée)
-        start: trims.get(beat.id) ?? Math.max(a * beat.t0 + bSource, index === 0 ? startAt : 0),
-        end: a * beat.t1 + bSource,
+        start: trims.get(beat.id) ?? Math.max(beat.t0 + bSource, index === 0 ? startAt : 0),
+        end: beat.t1 + bSource,
         panel: panel ? { spec: panel.spec, duration: panel.duration } : undefined
       }
     }), idleSegmentsSource)
@@ -654,7 +562,7 @@ export async function mux (videoName: string, videosDir: string, opts: MuxOption
   const filters: string[] = []
   audioBeats.forEach((beat, index) => {
     const audio = resolve(outDir, 'audio', `${beat.id}.mp3`)
-    const videoT = Math.max(0, a * beat.audioStart + b)
+    const videoT = Math.max(0, beat.audioStart + b)
     inputs.push('-i', audio)
     filters.push(`[${index + 1}:a]adelay=${Math.round(videoT * 1000)}:all=1,aresample=48000[a${index}]`)
   })
@@ -667,12 +575,12 @@ export async function mux (videoName: string, videosDir: string, opts: MuxOption
   if (!isPanelMode) {
     for (const beat of beats) {
       const cues = isMute
-        ? buildSilentCues(textById.get(beat.id) ?? '', timeMapper(a * beat.t0 + b), timeMapper(a * beat.t1 + b), beat.id, lastCueEnd)
+        ? buildSilentCues(textById.get(beat.id) ?? '', timeMapper(beat.t0 + b), timeMapper(beat.t1 + b), beat.id, lastCueEnd)
         : buildCues(
           textById.get(beat.id) ?? '',
           wordsById.get(beat.id),
           rules,
-          wall => timeMapper(a * wall + b),
+          wall => timeMapper(wall + b),
           beat.audioStart,
           beat.audioDur
         )
@@ -688,14 +596,14 @@ export async function mux (videoName: string, videosDir: string, opts: MuxOption
 
   // coupe la fin silencieuse après le dernier beat (dernière scène ou dernière
   // cue) ; en habillage panneaux, la durée est la somme des segments montés
-  const lastBeatEnd = beats.length ? Math.max(...beats.map(beat => a * beat.t1 + b)) : 0
+  const lastBeatEnd = beats.length ? Math.max(...beats.map(beat => beat.t1 + b)) : 0
   let outputDur: number
   if (isPanelMode && partList) {
     outputDur = partList.reduce((acc, part) => acc + (part.kind === 'panel' ? part.panel.duration : (part.end - part.start) / part.factor), 0) + 1
   } else if (beats.length) {
     outputDur = Math.min(timeMapper(Math.max(0, videoDur - startAt)), Math.max(lastCueEnd, timeMapper(lastBeatEnd)) + 1.5)
   } else {
-    outputDur = Math.max(0, timeMapper(videoDur) - startAt)
+    outputDur = timeMapper(Math.max(0, videoDur - startAt))
   }
   const srt = resolve(outDir, `${videoName}.srt`)
   if (cueIndex) writeFileSync(srt, srtLines.join('\n'))
@@ -733,7 +641,7 @@ export async function mux (videoName: string, videosDir: string, opts: MuxOption
       if (part.kind === 'panel') {
         // panneau : PNG rendu à la charte, tenu pendant le temps de lecture
         const png = resolve(panelDir, `panel-${String(panelIndex++).padStart(2, '0')}.png`)
-        await renderPanelPng(part.panel.spec, size, png)
+        await renderPanelPng(part.panel.spec, viewport, png, scale)
         segArgs = [
           '-y', '-loglevel', 'error',
           '-loop', '1', '-framerate', String(fps), '-i', png,

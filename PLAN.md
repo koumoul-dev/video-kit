@@ -1,5 +1,36 @@
 # Plan — validation du kit et suite
 
+## Prochaine version — capture horodatée, gabarit unique, refonte (23/10/2026, non publiée)
+
+- **Capture** : images du screencast Playwright (`page.screencast`, ≥ 1.59, JPEG
+  95) horodatées et écrites en H.264 quasi sans perte à 25 i/s, à la place de
+  `recordVideo` (VP8 temps réel à 1 Mbit/s). Texte fixe à 38,1 dB d'un
+  screenshot contre 35,0 dB avant (plafond yuv420p : 39,9 dB).
+- **Densité** : `--scale <n>` (drapeau `--force-device-scale-factor` + contexte) :
+  `--preset social --scale 1.5` = 1080p avec la mise en page 720p, `--scale 3`
+  = 4K (lourd : ~3 Go de RAM au pic).
+- **Calage exact** par l'horodatage de la première image (`videoStartWall`) :
+  plus de détection de scène, de facteur d'échelle, de flash blanc ni de
+  `--offset` ; les attentes `idle` du prélude sont remises à zéro au beat 0.
+  Les tournages d'un ancien kit (brut WebM) sont refusés au montage.
+- **Session** : Chromium derrière le proxy NHI (recette du skill
+  data-fair-browse) ; suppression de la récolte de cookies, de `--profile`,
+  `--no-state` et `auth:import`. `bypassCSP` : la CSP `font-src` bloquait la
+  Nunito embarquée, les cartons tombaient en police de repli.
+- **Charte** : un seul gabarit (intro, fin, panneaux), tailles en vh, couleurs du
+  thème data-fair (haut du dégradé `#0B3E8C`), grain contre les bandes, logo
+  officiel en SVG, `showOutro(page)` sans carton = intro à l'identique, `say()`,
+  sous-titres `plain`, incrustation `.st.mp4` en Nunito.
+- **Garde-fous** : curseur caché tant que la souris n'a pas bougé, replacé après
+  une navigation, effacé après 3 s d'immobilité ; relevé des polices de repli
+  dans les pages et iframes visibles.
+- Validé sur pages locales (format court, panneaux, muet + incrustation) et sur
+  staging-koumoul.com sous NHI (panneaux, 1080p et 4K). Mode voix non retesté.
+- CI GitHub (`.github/workflows/quality.yml`) : lint, types, tests, build.
+- Consommateurs à mettre à jour après publication : `pilotage` (branche
+  `video-cards-theme` prête : cartes de fin, couleurs des schémas, `say()`),
+  `documentation`, `app-edit-map`.
+
 ## 0.3.1 — liseré retiré, accent sous le badge (21/09/2026)
 
 - Retrait du **liseré ciel** `#81D4FA` en tête des cartons et des panneaux

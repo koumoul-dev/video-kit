@@ -44,7 +44,6 @@ garde la disposition desktop et reste lisible dans un fil).
 
 ```
 <videos-dir>/                 # videos/ par défaut, produits/videos chez pilotage
-├── .auth/state.json          # session navigateur (gitignoré, jamais commité)
 └── <slug>/
     ├── script.md             # source de vérité : front matter + beats
     ├── scenario.ts           # actions Playwright, une fonction par beat
@@ -52,7 +51,7 @@ garde la disposition desktop et reste lisible dans un fil).
     └── out/                  # artefacts générés (vidéo brute, timeline, MP4, SRT) : gitignoré
 ```
 
-`out/` et `.auth/` ne sont **jamais commités** ; les MP4 finaux restent dans
+`out/` n'est **jamais commité** ; les MP4 finaux restent dans
 `out/` et se copient hors du dépôt pour diffusion. Les scénarios, `script.md` et
 les assets légers sont versionnés.
 
@@ -87,7 +86,7 @@ Elles sont détaillées dans [references/charte.md](references/charte.md) ;
 l'essentiel :
 
 - **Cartons** à la charte Koumoul / Data Fair, couleurs du thème data-fair :
-  dégradé `#0D47A1 → #1976D2`, trait d'accent `#81D4FA` sous le badge, police
+  dégradé `#0B3E8C → #1976D2`, trait d'accent `#81D4FA` sous le badge, police
   Nunito embarquée, logo officiel Koumoul blanc en SVG, aucun asset réseau
   (complet dès la première frame). **Un seul gabarit** pour l'intro, la fin et
   les panneaux : logo et site toujours en bas, au même endroit ; la fin reprend
@@ -98,8 +97,9 @@ l'essentiel :
 - **Polices** : le tournage signale les pages affichées dans une police de
   repli (`⚠ police …`) ; refaire la prise plutôt que de diffuser.
 - **Qualité** : capture image par image horodatée (pas `recordVideo`, encodé à
-  1 Mbit/s), montage H.264 `-crf 18` ; la fenêtre fixe la définition et la
-  taille de l'interface (1280×720 pour être lu de loin).
+  1 Mbit/s), montage H.264 `-crf 18`. La fenêtre fixe la mise en page
+  (1280×720 pour être lu de loin), `--scale` la netteté : `--preset social
+  --scale 1.5` donne du 1080p avec l'interface du 720p.
 - **Sous-titres** : 2 lignes maximum, ~40 caractères par ligne, coupures à la
   ponctuation, incrustés (autoplay sans son), SRT conservé pour la version voix.
   En habillage `panneaux`, les citations ne deviennent pas des sous-titres : elles
@@ -113,7 +113,10 @@ l'essentiel :
 - **Toujours vérifier** après montage : `ffprobe` (durée, absence de piste audio
   en muet), extraction d'images (synchro), et supprimer le JDD / l'application de
   démonstration créés par le tournage.
-- Ne jamais committer de secret, cookie, `out/`, `.auth/`, ni MP4.
+- Ne jamais committer de secret, cookie, `out/`, ni MP4.
+- **Session** : Chromium est lancé derrière le proxy NHI (`npx @data-fair/nhi-proxy
+  serve --profile <profil>`), qui pose la session en cookies dès la première
+  navigation ; rien à récolter ni à attendre (voir `references/auth.md`).
 
 ## Références
 

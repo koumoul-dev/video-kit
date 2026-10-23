@@ -10,6 +10,7 @@
 //   await showIntro(page, { badge: '…', title: '…', subtitle: '…' })
 //   await hideIntro(page)
 //   await setCaption(page, '…')            // ou say(page, '…', actions)
+//   await showOutro(page)                  // reprend le carton d'intro
 //   await showOutro(page, { title: 'Toutes vos données au même endroit' })
 //
 // Tant qu'un carton recouvre l'appli (intro ou fin), l'overlay pose la classe
@@ -23,9 +24,10 @@
 //
 // Charte : couleurs du thème par défaut de data-fair
 // (`@data-fair/lib-common-types/theme` : primary #1976D2, secondary #81D4FA,
-// blue-darken-4 #0D47A1 pour le haut du dégradé, surface-inverse #424242 pour
-// les sous-titres, on-background #1F2937 de datafair.cloud pour le texte sur
-// fond clair), police Nunito embarquée en base64 et logo officiel Koumoul blanc
+// surface-inverse #424242 pour les sous-titres, on-background #1F2937 de
+// datafair.cloud pour le texte sur fond clair) ; seul le haut du dégradé sort
+// du thème (#0B3E8C, blue-darken-4 #0D47A1 assombri de 13 % pour donner de la
+// profondeur). Police Nunito embarquée en base64 et logo officiel Koumoul blanc
 // en SVG (dépôt communication, `logos/svg/logo-slogan-white.svg`) — aucun asset
 // réseau, pour que le carton soit complet dès la première frame.
 
@@ -51,10 +53,12 @@ export interface OverlayAssets {
 }
 
 export interface OverlayOptions {
+  // carton visible dès la première frame (format court)
   intro?: OverlayCard
-  // site des cartons de fin qui n'en fournissent pas (celui de l'intro) : passé
-  // à l'installation car l'overlay est réinstallé à chaque navigation
-  site?: string
+  // carton de fin par défaut (`showOutro(page)` sans carton) et source du site
+  // des cartes de fin qui n'en donnent pas : le carton d'intro, passé à
+  // l'installation car l'overlay est réinstallé à chaque navigation
+  outro?: OverlayCard
   assets?: OverlayAssets
   caption?: {
     // décale les sous-titres sur la gauche quand un panneau latéral occupe la
@@ -97,7 +101,7 @@ export function habillageCss (fontsCss = ''): string {
   return `${fontsCss}
         #__demo-overlay, #__demo-overlay * { box-sizing: border-box; }
         #__demo-overlay {
-          --demo-from: #0D47A1; --demo-to: #1976D2; --demo-accent: #81D4FA;
+          --demo-from: #0B3E8C; --demo-to: #1976D2; --demo-accent: #81D4FA;
           --demo-caption-bg: rgba(66, 66, 66, .88); --demo-ink: #1F2937;
           position: fixed; inset: 0; z-index: 2147483000; pointer-events: none;
           font-family: 'Nunito', 'DejaVu Sans', system-ui, sans-serif;
@@ -113,7 +117,6 @@ export function habillageCss (fontsCss = ''): string {
         #__demo-intro.demo-hidden { opacity: 0; }
         #__demo-outro { opacity: 0; visibility: hidden; transition: opacity .45s ease, visibility .45s; }
         #__demo-outro.demo-visible { opacity: 1; visibility: visible; }
-        #__demo-flash { position: fixed; inset: 0; z-index: 2147483644; background: #ffffff; }
         #__demo-overlay .demo-head { display: flex; flex-direction: column; align-items: center; gap: 2vh; }
         #__demo-overlay .demo-badge {
           font-size: 3.4vh; font-weight: 600; letter-spacing: .22em;
@@ -186,20 +189,20 @@ export function cardHtml (card: Partial<OverlayCard>, attrs: string, logo?: stri
 
 // Le script d'init est sérialisé et exécuté dans la page : tout ce qu'il utilise
 // doit être passé en argument (CSS et gabarits calculés côté Node).
-type OverlayInitOptions = Pick<OverlayOptions, 'intro' | 'site'> & { css: string, html: string, captionRight: number, captionStyle: string }
+type OverlayInitOptions = Pick<OverlayOptions, 'intro' | 'outro'> & { css: string, html: string, captionRight: number, captionStyle: string }
 
 export async function installOverlay (context: BrowserContext, options: OverlayOptions = {}) {
   const logo = options.assets?.logo
   const initOptions: OverlayInitOptions = {
     intro: options.intro,
-    site: options.site ?? options.intro?.site,
+    outro: options.outro ?? options.intro,
     css: habillageCss(options.assets?.fontsCss),
     html: `${cardHtml({}, 'id="__demo-intro"', logo)}${cardHtml({}, 'id="__demo-outro"', logo)}<div id="__demo-caption"><div class="caption-box"></div></div>`,
     captionRight: options.caption?.right ?? 0,
     captionStyle: options.caption?.style ?? 'box'
   }
   await context.addInitScript((opts: OverlayInitOptions) => {
-    const { intro, site, css, html, captionRight, captionStyle } = opts
+    const { intro, outro, css, html, captionRight, captionStyle } = opts
     const setup = () => {
       if (document.getElementById('__demo-overlay')) return true
       const host = document.documentElement
@@ -235,25 +238,12 @@ export async function installOverlay (context: BrowserContext, options: OverlayO
       })
 
       let introShownAt = performance.now()
-      let flash: HTMLElement | undefined
-      const showFlash = async (ms: number) => {
-        if (!ms) return
-        if (!flash) {
-          flash = document.createElement('div')
-          flash.id = '__demo-flash'
-          host.appendChild(flash)
-        }
-        await wait(ms)
-        flash.remove()
-        flash = undefined
-      }
 
       const api = {
         async showIntro (value: OverlayCard) {
           sessionStorage.removeItem('__demo-intro-hidden')
           setCover(true)
           introEl.classList.remove('demo-hidden')
-          await showFlash(700)
           fill(introEl, value)
           introEl.style.display = ''
           animateIn(introEl)
@@ -281,9 +271,11 @@ export async function installOverlay (context: BrowserContext, options: OverlayO
             { duration: 240, easing: 'cubic-bezier(.2, .7, .2, 1)' }
           )
         },
-        async showOutro (value: OverlayCard) {
+        async showOutro (value?: OverlayCard) {
+          const card = value ?? outro
+          if (!card) throw new Error('showOutro : aucun carton (ni carton fourni, ni carton d\'intro).')
           outroEl.querySelectorAll('.demo-title, .demo-subtitle').forEach(node => node.classList.remove('demo-in'))
-          fill(outroEl, { ...value, site: value.site ?? site })
+          fill(outroEl, { ...card, site: card.site ?? outro?.site })
           outroEl.classList.add('demo-visible')
           animateIn(outroEl)
           setCover(true)
@@ -293,7 +285,7 @@ export async function installOverlay (context: BrowserContext, options: OverlayO
 
       if (intro && sessionStorage.getItem('__demo-intro-hidden') !== '1') {
         // texte présent dès la première frame (accroche et point d'accroche de
-        // la détection de début) : pas d'animation, pas de flash
+        // la détection de début) : pas d'animation
         introEl.classList.remove('demo-hidden')
         fill(introEl, intro)
         introEl.querySelectorAll('.demo-title, .demo-subtitle').forEach(node => node.classList.add('demo-in'))
@@ -325,7 +317,9 @@ export async function setCaption (page: Page, text: string | null) {
   await page.evaluate(t => (window as any).__demoOverlay?.setCaption(t), text)
 }
 
-export async function showOutro (page: Page, card: OverlayCard) {
+// Carte de fin : même gabarit que l'intro ; sans carton, reprend l'intro à
+// l'identique (le site manquant est toujours repris de l'intro).
+export async function showOutro (page: Page, card?: OverlayCard) {
   await page.evaluate(c => (window as any).__demoOverlay?.showOutro(c), card)
 }
 

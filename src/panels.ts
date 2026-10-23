@@ -53,14 +53,15 @@ export function panelHtml (panel: PanelSpec, assets: OverlayAssets): string {
   </body></html>`
 }
 
-// Rend le panneau en PNG à la taille de la vidéo. Chromium headless est déjà une
+// Rend le panneau en PNG à la taille de la vidéo : mise en page de la fenêtre
+// (`size`, pixels CSS), densité `scale`. Chromium headless est déjà une
 // dépendance du kit (`@playwright/test`) : mêmes polices et mêmes couleurs que
 // les cartons, sans outil de rendu supplémentaire.
-export async function renderPanelPng (panel: PanelSpec, size: { width: number, height: number }, outPng: string): Promise<void> {
+export async function renderPanelPng (panel: PanelSpec, size: { width: number, height: number }, outPng: string, scale = 1): Promise<void> {
   const assets = loadOverlayAssets()
   const browser = await chromium.launch({ args: ['--force-color-profile=srgb'] })
   try {
-    const page = await browser.newPage({ viewport: size, deviceScaleFactor: 1 })
+    const page = await browser.newPage({ viewport: size, deviceScaleFactor: scale })
     await page.setContent(panelHtml(panel, assets), { waitUntil: 'load' })
     // charge explicitement chaque graisse : `document.fonts.ready` peut se
     // résoudre avant que la mise en page ait réclamé la police (rendu en repli)

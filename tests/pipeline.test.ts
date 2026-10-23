@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
 import { slotsBefore } from '../src/capture.ts'
-import { buildPanelParts, buildSilentCues, buildTimeMapper, exactCalibration, findLoadingEnd, groupTokens, mergeIdleSegments, wrapCue } from '../src/mux.ts'
+import { buildPanelParts, buildSilentCues, buildTimeMapper, calibration, findLoadingEnd, groupTokens, mergeIdleSegments, wrapCue } from '../src/mux.ts'
 import { captionHold, cardHtml, loadOverlayAssets } from '../src/overlay.ts'
 import { panelBadge, panelDuration, panelHtml } from '../src/panels.ts'
 import { silentDuration } from '../src/tts.ts'
@@ -49,7 +49,7 @@ test('compression des attentes : segments fusionnés et facteur par défaut', ()
     { t0: 10, t1: 20 },
     { t0: 19, t1: 25, factor: 10 },
     { t0: 50, t1: 52 }
-  ], 1, 0, 100)
+  ], 0, 100)
   assert.equal(segments.length, 2)
   assert.deepEqual(segments[0], { start: 10, end: 25, factor: 10 })
   assert.deepEqual(segments[1], { start: 50, end: 52, factor: 6 })
@@ -157,11 +157,12 @@ test('capture : images répétées à cadence fixe d’après l’horodatage', (
   assert.equal(slotsBefore(1000, 900), 0)
 })
 
-test('calage exact : horodatage de la première image, sinon détection', () => {
-  assert.equal(exactCalibration({ originWall: 10_000, cardT0: 0.8 }), undefined)
-  const exact = exactCalibration({ originWall: 12_500, videoStartWall: 10_000, cardT0: 0.8 })
-  assert.equal(exact?.bSource, 2.5)
-  assert.equal(exact?.cardTime, 3.4)
+test('calage exact : horodatage de la première image, carton peint + 0,1 s', () => {
+  const { bSource, cardTime } = calibration({ originWall: 12_500, videoStartWall: 10_000, cardT0: 0.8 })
+  assert.equal(bSource, 2.5)
+  assert.equal(cardTime, 3.4)
+  // horloge de la capture en avance sur le tournage : jamais de temps négatif
+  assert.equal(calibration({ originWall: 10_000, videoStartWall: 12_000, cardT0: 0.5 }).cardTime, 0)
 })
 
 test('carton : gabarit unique, champs vides gardés pour la mise en page', () => {

@@ -37,7 +37,7 @@ script.md ──► tts (voix|muet) ──► recorder (Playwright) ──► ti
    beats, idles).
 
 **Capture** : chaque image du screencast Playwright (`page.screencast`,
-Playwright ≥ 1.59, JPEG qualité 90, jusqu'à 60 images/s) est horodatée sur
+Playwright ≥ 1.59, JPEG qualité 95, jusqu'à 60 images/s) est horodatée sur
 l'horloge murale et écrite dans un ffmpeg local à 25 images/s, en H.264 quasi
 sans perte (`-crf 10`) : une image est répétée tant que la page ne change pas.
 `recordVideo` n'est plus utilisé : son encodage VP8 temps réel à 1 Mbit/s
@@ -50,16 +50,18 @@ une police de repli sont journalisées (`⚠ police …`) puis récapitulées en
 tournage (voir [charte.md](charte.md)).
 
 Options utiles : `--headed` (mise au point), `--url <url>` (page ouverte avant
-le scénario), `--no-tts` (réutilise l'audio), `--profile`, `--state`, `--no-state`
-(voir [auth.md](auth.md)).
+le scénario), `--scale <n>` (densité : vidéo de fenêtre × n, voir
+[charte.md](charte.md)), `--no-tts` (réutilise l'audio), `--state` (cookies
+explicites) ;
+la session vient du proxy NHI (voir [auth.md](auth.md)).
 
 ## 3. Montage (`koumoul-video mux`)
 
-- **Calage** : exact quand la timeline porte `videoStartWall` (horodatage des
-  images, kit ≥ 0.4) : l'amorce est coupée à l'instant où le carton est peint
-  (+ 0,1 s). Un ancien brut WebM retombe sur la détection du passage blanc →
-  carton (changement de scène). Sans carton (format court), détection du
-  premier rendu par luminance (`signalstats` sur une zone centrale).
+- **Calage** : exact, par l'horodatage des images (`videoStartWall` de la
+  timeline) : l'amorce est coupée à l'instant où le carton est peint (+ 0,1 s).
+  Sans carton (format court), détection du premier rendu par luminance
+  (`signalstats` sur une zone centrale). Un tournage d'un ancien kit (brut
+  WebM, timeline sans horodatage) est refusé : le retourner.
 - **Sous-titres** : découpage en cues de 2 lignes (~40 caractères), calées mot à
   mot (voix) ou ancrées sur la scène (muet, ~13 caractères/s).
 - **Habillage panneaux** (`habillage: panneaux`, muet) : chaque citation devient
@@ -71,10 +73,9 @@ le scénario), `--no-tts` (réutilise l'audio), `--profile`, `--state`, `--no-st
   affine par morceaux ; les segments sont encodés **morceau par morceau** puis
   assemblés par le concat demuxer (un graphe unique bufferise tout le 1080p en
   mémoire et se fait tuer au-delà de quelques minutes).
-- **Sorties** : `out/<video>.mp4` (H.264 `-preset slow -crf 18 -tune
-  stillimage`, + AAC en voix), `out/<video>.srt`, `out/<video>.st.mp4` avec
+- **Sorties** : `out/<video>.mp4` (H.264 `-preset slow -crf 18`, + AAC en
+  voix), `out/<video>.srt`, `out/<video>.st.mp4` avec
   `--burn` (sous-titres incrustés en Nunito SemiBold sur bandeau `#424242`).
-- `--offset <s>` force le calage (anciens bruts dont la détection échoue).
 
 ## 4. Nettoyage (`koumoul-video clean`)
 
@@ -115,6 +116,5 @@ jeu de données / de l'application de démonstration.
 
 ```gitignore
 videos/**/out/
-videos/.auth/
 # formats courts : envisager videos/*.mp4
 ```

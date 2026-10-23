@@ -13,7 +13,7 @@ compris dans les schémas animés maison des formats courts.
 
 | Rôle | Valeur |
 | --- | --- |
-| Fond de carton | dégradé vertical `#0D47A1` (blue-darken-4, haut) → `#1976D2` (primary, bas), grain fixe ~3 % |
+| Fond de carton | dégradé vertical `#0B3E8C` (haut) → `#1976D2` (primary, bas), grain fixe ~3 % ; le haut est blue-darken-4 `#0D47A1` assombri de 13 %, seule couleur hors thème, pour la profondeur |
 | Trait d'accent et badge | `#81D4FA` (secondary) |
 | Texte de carton | blanc |
 | Sous-titres incrustés | texte blanc sur `#424242` (surface-inverse) translucide |
@@ -61,13 +61,13 @@ dans `subtitle`.
 - **Intro ≥ 2,6 s** (`hideIntro` applique `minVisibleMs` par défaut), le temps de
   lire le titre ; l'affichage est suivi d'un fondu de ~380 ms.
 - **Calage** : la vidéo brute est horodatée image par image ; le montage coupe
-  l'amorce (chargement, flash blanc) à l'instant où le carton est peint, sans
-  détection. Le flash blanc reste le repère des anciens bruts WebM : ne pas le
-  supprimer.
-- **Fin** : même gabarit que l'intro, posé par-dessus l'écran final avec une
-  phrase d'appel en titre. Le site est repris de l'intro (`carton_site`, ou
-  `site` de l'`intro` exportée) quand `showOutro` ne le fournit pas ; passer
-  `site: ''` pour l'omettre volontairement. Le curseur est masqué comme sur
+  l'amorce (chargement) à l'instant où le carton est peint, sans détection.
+- **Fin** : même gabarit que l'intro, posé par-dessus l'écran final.
+  `showOutro(page)` sans carton reprend l'intro à l'identique (le plus simple
+  pour une vidéo de démonstration) ; avec un carton, la phrase d'appel va en
+  titre et le site est repris de l'intro (`carton_site`, ou `site` de l'`intro`
+  exportée) s'il n'est pas fourni ; passer `site: ''` pour l'omettre. Pas de
+  pied de carton du type « démonstration Koumoul » : le logo suffit. Le curseur est masqué comme sur
   l'intro.
 
 Le carton reprend le front matter de `script.md` :
@@ -160,15 +160,26 @@ s'appliquent qu'à la synthèse (`pronunciations`), jamais au SRT.
 
 ## Formats d'enregistrement
 
-La vidéo est capturée en pixels CSS : la taille de la fenêtre est la définition
-de la vidéo **et** fixe la taille de l'interface à l'écran. Chrome headless ne
-capture pas en haute densité (`deviceScaleFactor` sans effet sur le
-screencast) : pas de 4K du produit.
+Deux réglages indépendants :
 
-- **1280×720** : formats courts, pages Fonctionnalités, boucles de stand —
-  interface lisible à distance, disposition desktop conservée (au-dessus du
-  seuil `lg` de Vuetify, 1145 px).
-- **1920×1080** : cours et démos d'atelier projetés en plein écran ; l'interface
-  y paraît plus petite, à éviter pour un écran regardé à 2-3 m.
-- `deviceScaleFactor: 1`, locale `fr-FR`, timezone `Europe/Paris` : ne pas
-  modifier, les vidéos sont produites en français.
+- **la fenêtre** (`--size`, pixels CSS) fixe la mise en page et donc la taille
+  de l'interface à l'écran ;
+- **la densité** (`--scale`) multiplie les pixels sans changer la mise en page :
+  la vidéo fait `fenêtre × densité`. Le kit lance Chrome avec
+  `--force-device-scale-factor` en plus du `deviceScaleFactor` du contexte
+  (sans le drapeau, le screencast headless reste en pixels CSS).
+
+| Usage | Fenêtre | Densité | Vidéo |
+| --- | --- | --- | --- |
+| LinkedIn, pages Fonctionnalités, schémas animés | 1280×720 | 1,5 | 1920×1080 |
+| Boucle de stand (lisible à 2-3 m) | 1280×720 | 1,5 (3 pour la 4K) | 1080p (ou 2160p) |
+| Cours et démos projetés | 1920×1080 | 1 | 1920×1080 |
+
+- 1280×720 garde la disposition desktop (au-dessus du seuil `lg` de Vuetify,
+  1145 px) avec une interface lisible de loin ; en 1920×1080 de fenêtre,
+  l'interface paraît plus petite.
+- La 4K (`--scale 3`) fonctionne mais coûte cher : ~3 Go de RAM au pic, tournage
+  et montage ~3 fois plus longs, moins d'images distinctes par seconde dans les
+  mouvements. À réserver à une boucle de stand sur un écran 4K.
+- Locale `fr-FR`, timezone `Europe/Paris` : ne pas modifier, les vidéos sont
+  produites en français.

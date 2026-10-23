@@ -36,15 +36,19 @@ mouvements. L'horodatage des images donne un calage exact du montage.
 ```bash
 npx koumoul-video record --video <slug> --preset <voix|muet|social>          # tournage
 npx koumoul-video record --video <slug> --preset muet --mux --burn           # + montage
-npx koumoul-video mux --video <slug> [--offset 1.2] [--burn]                 # montage seul
+npx koumoul-video mux --video <slug> [--burn]                                # montage seul
 npx koumoul-video tts --video <slug> [--force|--bakeoff|--bakeoff-prononciation]
-npx koumoul-video clean --video <slug> [--id <dataset-id>]
-npx koumoul-video auth:import <fichier>
+npx koumoul-video clean --video <slug> [--id <dataset-id>] [--url <back-office>]
 ```
 
 Options : `--videos-dir` (défaut `videos`), `--size`, `--url`, `--headed`,
-`--no-tts`, `--state`/`--no-state`/`--profile`, `--caption-right`. Voir
-`npx koumoul-video help`.
+`--no-tts`, `--state`, `--caption-right`. Voir `npx koumoul-video help`.
+
+La session vient du proxy NHI (`npx @data-fair/nhi-proxy serve --profile
+<profil>`) : Chromium est lancé derrière lui et reçoit les cookies dès la
+première navigation. Choix du proxy : `NHI_PROXY_SERVER`, navigateur MCP
+d'opencode, ou profil nhi-proxy (`NHI_PROXY_PROFILE`) ; `RECORD_NO_PROXY=1` pour
+un chargement anonyme.
 
 ## Formats
 
@@ -53,6 +57,10 @@ Options : `--videos-dir` (défaut `videos`), `--size`, `--url`, `--headed`,
 | `voix` | 1920×1080 | edge-tts / kokoro, SRT mot à mot | cours, tutoriels |
 | `muet` | 1920×1080 | aucune, sous-titres ancrés sur la scène | démos d'atelier |
 | `social` | 1280×720 | aucune, sous-titres incrustés par le scénario | formats courts |
+
+`--scale <n>` multiplie la définition sans changer la mise en page : `--preset
+social --scale 1.5` donne une vidéo 1920×1080 avec l'interface d'une fenêtre
+1280×720 (texte 1,5 fois plus net) ; `--scale 3` donne de la 4K.
 
 Variante de `muet` : `habillage: panneaux` dans le front matter — les citations
 deviennent des **panneaux pleine page** insérés au montage entre les fragments,
